@@ -315,6 +315,37 @@ export async function getInvestorFlow(indices?: MarketIndex[]): Promise<Investor
   return marketInformedFlow(indices?.length ? indices : mockMarketIndices);
 }
 
+// ── Commodities & Bonds ───────────────────────────────────────────────────────
+
+export interface CommodityItem {
+  price:         number;
+  changePercent: number;
+}
+
+export interface CommodityData {
+  wti:   CommodityItem | null;
+  brent: CommodityItem | null;
+  tnx:   CommodityItem | null;
+}
+
+export async function getCommoditiesAndBonds(): Promise<CommodityData> {
+  try {
+    const quotes = await fetchYFQuotes(["CL=F", "BZ=F", "^TNX"]);
+    const find = (sym: string) => quotes.find(q => q.symbol === sym);
+    const toItem = (q: YFQuote | undefined): CommodityItem | null =>
+      q?.regularMarketPrice
+        ? { price: q.regularMarketPrice, changePercent: q.regularMarketChangePercent ?? 0 }
+        : null;
+    return {
+      wti:   toItem(find("CL=F")),
+      brent: toItem(find("BZ=F")),
+      tnx:   toItem(find("^TNX")),
+    };
+  } catch {
+    return { wti: null, brent: null, tnx: null };
+  }
+}
+
 // ── YF symbol helper ──────────────────────────────────────────────────────────
 
 // Guess Yahoo Finance symbol from a bare Korean stock code

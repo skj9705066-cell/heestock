@@ -29,18 +29,36 @@ export function MarketSummaryAI({ indices = [] }: Props) {
       const nasdaq = indices.find(i => i.name === "나스닥");
       const sp500  = indices.find(i => i.name === "S&P500");
 
+      const fmt = (v: number, decimals = 2) =>
+        `${v >= 0 ? "+" : ""}${v.toFixed(decimals)}%`;
+
+      // Fetch commodities & bonds in parallel with no additional loading state
+      const commodities = await fetch("/api/market-data?type=commodities")
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null) as {
+          wti:   { price: number; changePercent: number } | null;
+          brent: { price: number; changePercent: number } | null;
+          tnx:   { price: number; changePercent: number } | null;
+        } | null;
+
       const res = await fetch("/api/market-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kospi:       kospi?.value?.toLocaleString("ko-KR",  { maximumFractionDigits: 2 }),
-          kospiChange: kospi  ? `${kospi.changePercent  >= 0 ? "+" : ""}${kospi.changePercent.toFixed(2)}%`  : undefined,
-          kosdaq:      kosdaq?.value?.toLocaleString("ko-KR", { maximumFractionDigits: 2 }),
-          kosdaqChange: kosdaq ? `${kosdaq.changePercent >= 0 ? "+" : ""}${kosdaq.changePercent.toFixed(2)}%` : undefined,
-          nasdaq:      nasdaq?.value?.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-          nasdaqChange: nasdaq ? `${nasdaq.changePercent >= 0 ? "+" : ""}${nasdaq.changePercent.toFixed(2)}%` : undefined,
-          sp500:       sp500?.value?.toLocaleString("en-US",  { maximumFractionDigits: 2 }),
-          sp500Change: sp500  ? `${sp500.changePercent  >= 0 ? "+" : ""}${sp500.changePercent.toFixed(2)}%`  : undefined,
+          kospi:        kospi?.value?.toLocaleString("ko-KR",  { maximumFractionDigits: 2 }),
+          kospiChange:  kospi  ? fmt(kospi.changePercent)  : undefined,
+          kosdaq:       kosdaq?.value?.toLocaleString("ko-KR", { maximumFractionDigits: 2 }),
+          kosdaqChange: kosdaq ? fmt(kosdaq.changePercent) : undefined,
+          nasdaq:       nasdaq?.value?.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+          nasdaqChange: nasdaq ? fmt(nasdaq.changePercent) : undefined,
+          sp500:        sp500?.value?.toLocaleString("en-US",  { maximumFractionDigits: 2 }),
+          sp500Change:  sp500  ? fmt(sp500.changePercent)  : undefined,
+          wti:          commodities?.wti   ? `$${commodities.wti.price.toFixed(2)}`   : undefined,
+          wtiChange:    commodities?.wti   ? fmt(commodities.wti.changePercent)        : undefined,
+          brent:        commodities?.brent ? `$${commodities.brent.price.toFixed(2)}` : undefined,
+          brentChange:  commodities?.brent ? fmt(commodities.brent.changePercent)     : undefined,
+          tnx:          commodities?.tnx   ? `${commodities.tnx.price.toFixed(3)}%`  : undefined,
+          tnxChange:    commodities?.tnx   ? fmt(commodities.tnx.changePercent)       : undefined,
         }),
       });
       if (!res.ok) throw new Error("API error");

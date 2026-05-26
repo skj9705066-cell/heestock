@@ -4,6 +4,7 @@ import {
   getTopStocks,
   getSectors,
   getInvestorFlow,
+  getCommoditiesAndBonds,
 } from "@/lib/market-data";
 
 export const runtime = "nodejs";
@@ -30,20 +31,25 @@ export async function GET(req: NextRequest) {
         const data    = await getInvestorFlow(indices);
         return Response.json(data);
       }
+      case "commodities": {
+        const data = await getCommoditiesAndBonds();
+        return Response.json(data);
+      }
       default: {
-        const [indices, topStocks, sectors, indices2] = await Promise.allSettled([
+        const [indices, topStocks, sectors, commodities] = await Promise.allSettled([
           getMarketIndices(),
           getTopStocks(),
           getSectors(),
-          getMarketIndices(),
+          getCommoditiesAndBonds(),
         ]);
         const idxData = indices.status  === "fulfilled" ? indices.value  : [];
         const invFlow = await getInvestorFlow(idxData);
         return Response.json({
           indices:      idxData,
-          sectors:      sectors.status    === "fulfilled" ? sectors.value    : [],
+          sectors:      sectors.status      === "fulfilled" ? sectors.value      : [],
           investorFlow: invFlow,
-          topStocks:    topStocks.status  === "fulfilled" ? topStocks.value  : [],
+          topStocks:    topStocks.status    === "fulfilled" ? topStocks.value    : [],
+          commodities:  commodities.status  === "fulfilled" ? commodities.value  : { wti: null, brent: null, tnx: null },
         });
       }
     }
