@@ -1,0 +1,51 @@
+{
+  "name": "희스탁 HeeStock",
+  "short_name": "희스탁",
+  "description": "AI 기반 한국·미국 주식 종합 분석 플랫폼. Claude AI를 활용한 실시간 종목 분석.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "lang": "ko",
+  "categories": ["finance", "business"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "대시보드",
+      "short_name": "대시보드",
+      "description": "시장 현황 대시보드",
+      "url": "/",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "AI 분석",
+      "short_name": "AI 분석",
+      "description": "AI 종목 분석",
+      "url": "/ai-analysis",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "재무제표",
+      "short_name": "재무제표",
+      "description": "기업 재무 데이터",
+      "url": "/financials",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any" }]
+    }
+  ]
+}
