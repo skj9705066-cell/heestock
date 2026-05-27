@@ -1,7 +1,10 @@
 import { fetchYFQuotes, fetchYFPriceHistory } from "@/lib/yahoo-finance";
 import type { MarketSignal, ADRData } from "@/types/market";
 
-export const runtime = "nodejs";
+export const runtime    = "nodejs";
+export const dynamic    = "force-dynamic";
+export const revalidate = 0;
+export const maxDuration = 60;
 
 const KR_POOL = [
   "005930.KS","000660.KS","042700.KS","000990.KS",
@@ -50,17 +53,24 @@ const _cache = new Map<string, { data: unknown; ts: number }>();
 export async function GET() {
   const cached = _cache.get("signals");
   if (cached && Date.now() - cached.ts < 5 * 60_000) {
-    return Response.json(cached.data);
+    return Response.json(cached.data, {
+      headers: { "Cache-Control": "no-store, must-revalidate" },
+    });
   }
 
-  // Fetch current quotes + 5-day KOSPI history in parallel
-  const [quotesRes, kospiHistRes] = await Promise.allSettled([
+  // Fetch current quotes + per-symbol 5-day history (used to compute REAL
+  // daily ADR from each day's close-vs-prev-close, instead of estimating).
+  const [quotesRes, ...histResults] = await Promise.allSettled([
     fetchYFQuotes(KR_POOL),
-    fetchYFPriceHistory("^KS11", "5d"),
+    ...KR_POOL.map(sym => fetchYFPriceHistory(sym, "5d")),
   ]);
 
-  const quotes     = quotesRes.status     === "fulfilled" ? quotesRes.value     : [];
-  const kospiHist  = kospiHistRes.status  === "fulfilled" ? kospiHistRes.value  : [];
+  const quotes  = quotesRes.status === "fulfilled" ? quotesRes.value : [];
+  const symHist: Record<string, { ts: number; close: number }[]> = {};
+  KR_POOL.forEach((sym, i) => {
+    const r = histResults[i];
+    if (r?.status === "fulfilled") symHist[sym] = r.value;
+  });
 
   // ── ADR (today from pool) ────────────────────────────────────────────────
   let advancers = 0, decliners = 0, unchanged = 0;
@@ -73,29 +83,52 @@ export async function GET() {
   const totalADR  = advancers + decliners + (unchanged / 2);
   const todayADR  = totalADR > 0 ? parseFloat((advancers / Math.max(decliners, 1)).toFixed(2)) : 1.0;
 
-  // ── Historical ADR chart (5 days) from KOSPI closes ──────────────────────
-  const adrHistory: ADRData[] = kospiHist.slice(-5).map(pt => {
-    // Use a pool-weighted model: KOSPI +1% ≈ ADR 1.6, -1% ≈ ADR 0.6
-    const date     = new Date(pt.ts * 1000);
-    const mm       = String(date.getMonth() + 1).padStart(2, "0");
-    const dd       = String(date.getDate()).padStart(2, "0");
-    // We only know today's real ADR; estimate history from index level
-    const isToday  = dd === String(new Date().getDate()).padStart(2, "0");
-    if (isToday) {
-      return { date: `${mm}/${dd}`, adr: todayADR, advancers, decliners };
+  // ── Historical ADR chart from per-symbol close-vs-prev-close ─────────────
+  // Build a map: trading-day-ts → { adv, dec } using REAL pool member moves.
+  const dayBuckets = new Map<number, { adv: number; dec: number }>();
+  for (const sym of KR_POOL) {
+    const series = symHist[sym];
+    if (!series || series.length < 2) continue;
+    for (let i = 1; i < series.length; i++) {
+      const prev = series[i - 1].close;
+      const curr = series[i].close;
+      if (!prev || !curr) continue;
+      const chgPct = ((curr - prev) / prev) * 100;
+      const ts = series[i].ts;
+      const bucket = dayBuckets.get(ts) ?? { adv: 0, dec: 0 };
+      if      (chgPct >  0.05) bucket.adv++;
+      else if (chgPct < -0.05) bucket.dec++;
+      dayBuckets.set(ts, bucket);
     }
-    // For past days, estimate from the close vs previous close
-    const adrEst = parseFloat(Math.max(0.3, Math.min(3.5, 1.0 + (Math.random() - 0.48) * 0.8)).toFixed(2));
-    const adv    = Math.round(KR_POOL.length * (adrEst / (adrEst + 1)));
-    const dec    = KR_POOL.length - adv;
-    return { date: `${mm}/${dd}`, adr: adrEst, advancers: adv, decliners: dec };
-  });
-  // Ensure today is at the end and use real data
+  }
+
+  const adrHistory: ADRData[] = [...dayBuckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .slice(-5)
+    .map(([ts, b]) => {
+      const date = new Date(ts * 1000);
+      const mm   = String(date.getMonth() + 1).padStart(2, "0");
+      const dd   = String(date.getDate()).padStart(2, "0");
+      const adr  = parseFloat((b.adv / Math.max(b.dec, 1)).toFixed(2));
+      return { date: `${mm}/${dd}`, adr, advancers: b.adv, decliners: b.dec };
+    });
+
+  // Stamp today's row with the live ADR from quotes (more accurate than
+  // close-vs-prev-close for an in-progress day).
   if (adrHistory.length > 0) {
-    const last = adrHistory[adrHistory.length - 1];
-    last.adr        = todayADR;
-    last.advancers  = advancers;
-    last.decliners  = decliners;
+    const todayDD = String(new Date().getDate()).padStart(2, "0");
+    const last    = adrHistory[adrHistory.length - 1];
+    if (last.date.endsWith(todayDD) && quotes.length > 0) {
+      last.adr        = todayADR;
+      last.advancers  = advancers;
+      last.decliners  = decliners;
+    }
+  } else if (quotes.length > 0) {
+    // No history available — show a single real data point for today only.
+    const date = new Date();
+    const mm   = String(date.getMonth() + 1).padStart(2, "0");
+    const dd   = String(date.getDate()).padStart(2, "0");
+    adrHistory.push({ date: `${mm}/${dd}`, adr: todayADR, advancers, decliners });
   }
 
   // ── % stocks near 52-week high ────────────────────────────────────────────
@@ -183,5 +216,7 @@ export async function GET() {
 
   const result = { signals, adrHistory, leaderSectors, fiftyTwoWeekHighs, breakthroughList };
   _cache.set("signals", { data: result, ts: Date.now() });
-  return Response.json(result);
+  return Response.json(result, {
+    headers: { "Cache-Control": "no-store, must-revalidate" },
+  });
 }
