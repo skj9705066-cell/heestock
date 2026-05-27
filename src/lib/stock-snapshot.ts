@@ -464,18 +464,31 @@ export async function buildStockSnapshot(
   // is paginated and slower). DART remains the source for financials.
   const isKr = market === "KR";
 
-  const [qRes, ksRes, histRes, finRes, kisRes, kisInvRes] = await Promise.allSettled([
+  // KIS rate-limits same-TR back-to-back calls. We sequence the two KIS calls
+  // (different TRs, but a small inter-call gap helps) and fire YF + DART in
+  // parallel alongside.
+  const kisPromise: Promise<{ price: KisPrice | null; flow: KisInvestorDay[] }> = isKr
+    ? (async () => {
+        const price = await fetchKisPrice(stockCode);
+        const flow  = await fetchKisInvestorFlow(stockCode, 5);
+        return { price, flow };
+      })()
+    : Promise.resolve({ price: null, flow: [] });
+
+  const [qRes, ksRes, histRes, finRes, kisRes] = await Promise.allSettled([
     fetchYFQuotes([yfSym]).then(arr => arr[0] ?? null),
     fetchYFKeyStats(yfSym),
     fetchYFPriceHistory(yfSym, "1y"),
     isKr ? buildKrFinancials(stockCode) : buildUsFinancials(yfSym),
-    isKr ? fetchKisPrice(stockCode)         : Promise.resolve(null),
-    isKr ? fetchKisInvestorFlow(stockCode, 5) : Promise.resolve([]),
+    kisPromise,
   ]);
 
+  const kisBundle = kisRes.status === "fulfilled" ? kisRes.value : { price: null, flow: [] };
+  const kisPrice  = kisBundle.price;
+  const kisFlow   = kisBundle.flow;
+
   // Quote: prefer KIS (authoritative for KR), fall back to Yahoo
-  const kisPrice = kisRes.status === "fulfilled" ? kisRes.value : null;
-  const yfQuote  = qRes.status   === "fulfilled" ? qRes.value   : null;
+  const yfQuote  = qRes.status === "fulfilled" ? qRes.value : null;
   let quote: SnapshotQuote | undefined;
   if (isKr && kisPrice) {
     quote = buildKrQuoteFromKis(kisPrice);
@@ -483,6 +496,7 @@ export async function buildStockSnapshot(
     quote = buildQuote(yfQuote, market);
   }
   if (!quote) errors.push("실시간 시세 조회 실패");
+  else if (isKr && !kisPrice) errors.push("KIS 시세 조회 실패 (Yahoo 폴백)");
 
   // Key stats: prefer KIS for KR (PER/PBR/EPS/BPS), Yahoo for US
   const yfStats = ksRes.status === "fulfilled" ? ksRes.value : null;
@@ -506,9 +520,7 @@ export async function buildStockSnapshot(
   }
 
   // Investor flow (KR only). Failure isn't fatal — the AI flow doesn't need it.
-  const investorFlow = isKr && kisInvRes.status === "fulfilled"
-    ? buildInvestorFlow(kisInvRes.value)
-    : undefined;
+  const investorFlow = isKr ? buildInvestorFlow(kisFlow) : undefined;
   if (isKr && !investorFlow) errors.push("수급(외/기/개) 조회 실패");
 
   const snapshot: StockSnapshot = {
@@ -525,7 +537,14 @@ export async function buildStockSnapshot(
     errors,
   };
 
-  _snapshotCache.set(cacheKey, { data: snapshot, ts: Date.now() });
+  // Only cache full-quality results. For KR stocks we expect KIS to populate
+  // the quote (via kisPrice). If KIS came up empty we likely got rate-limited
+  // — don't cement a Yahoo-only fallback in the 5-min cache; let the next
+  // request try KIS again.
+  const krKisOk = !isKr || kisPrice !== null;
+  if (krKisOk) {
+    _snapshotCache.set(cacheKey, { data: snapshot, ts: Date.now() });
+  }
   return snapshot;
 }
 
