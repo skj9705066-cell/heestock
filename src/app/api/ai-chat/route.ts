@@ -2,7 +2,9 @@ import { anthropic, STOCK_ANALYSIS_SYSTEM_PROMPT } from "@/lib/anthropic";
 import { buildStockSnapshot, formatSnapshotForPrompt, type Market } from "@/lib/stock-snapshot";
 import { NextRequest } from "next/server";
 
-export const runtime = "nodejs";
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
+export const revalidate  = 0;
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {

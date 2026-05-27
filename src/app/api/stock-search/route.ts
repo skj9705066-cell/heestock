@@ -2,7 +2,9 @@ import { NextRequest } from "next/server";
 import { searchYFSymbols } from "@/lib/yahoo-finance";
 import { searchDartCorps } from "@/lib/dart";
 
-export const runtime = "nodejs";
+export const runtime  = "nodejs";
+export const dynamic  = "force-dynamic";
+export const revalidate = 0;
 
 // Curated sector labels for major Korean tickers — used to enrich both
 // YF/Dart search results with Korean sector text (YF returns English industries).
@@ -120,5 +122,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return Response.json(results.slice(0, 10));
+  return Response.json(results.slice(0, 10), {
+    headers: { "Cache-Control": "no-store, must-revalidate" },
+  });
 }

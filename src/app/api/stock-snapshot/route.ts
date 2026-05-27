@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { buildStockSnapshot, type Market } from "@/lib/stock-snapshot";
 
-export const runtime = "nodejs";
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
+export const revalidate  = 0;
 export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
@@ -16,7 +18,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const snapshot = await buildStockSnapshot(symbol, name || symbol, market);
-    return Response.json(snapshot);
+    return Response.json(snapshot, {
+      headers: { "Cache-Control": "no-store, must-revalidate" },
+    });
   } catch (err) {
     console.error("[stock-snapshot] error:", err);
     return Response.json(

@@ -419,21 +419,42 @@ export interface DartCorp {
 }
 
 // Minimal ZIP extractor — DART returns a ZIP containing exactly one file
-// (CORPCODE.xml) using DEFLATE. We parse only the first local file header.
+// (CORPCODE.xml). DART uses the data-descriptor variant (flag bit 3), so the
+// compressed/uncompressed sizes in the local file header are zero and the real
+// sizes live in the central directory. We locate the EOCD record, follow it to
+// the central directory entry, and read sizes from there.
 function unzipFirst(buffer: Buffer): Buffer {
-  if (buffer.length < 30 || buffer.readUInt32LE(0) !== 0x04034b50) {
-    throw new Error("Invalid ZIP (no local file header)");
+  // 1) Find End-of-Central-Directory record (PK\x05\x06). Scan backwards over
+  // the last 64 KiB + 22-byte EOCD payload — the variable-length comment field
+  // means the EOCD can be anywhere in that window.
+  let eocdPos = -1;
+  const searchStart = Math.max(0, buffer.length - 65_557);
+  for (let i = buffer.length - 22; i >= searchStart; i--) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) { eocdPos = i; break; }
   }
-  const compression    = buffer.readUInt16LE(8);
-  const compressedSize = buffer.readUInt32LE(18);
-  const nameLen        = buffer.readUInt16LE(26);
-  const extraLen       = buffer.readUInt16LE(28);
-  const dataStart      = 30 + nameLen + extraLen;
-  const dataEnd        = dataStart + compressedSize;
-  const compressed     = buffer.subarray(dataStart, dataEnd);
-  if (compression === 0) return compressed;
-  if (compression === 8) return inflateRawSync(compressed);
-  throw new Error(`Unsupported ZIP compression: ${compression}`);
+  if (eocdPos < 0) throw new Error("ZIP: end-of-central-directory not found");
+
+  // 2) Central-directory header (PK\x01\x02) — read true sizes here.
+  const cdOffset = buffer.readUInt32LE(eocdPos + 16);
+  if (buffer.readUInt32LE(cdOffset) !== 0x02014b50) {
+    throw new Error("ZIP: central directory signature mismatch");
+  }
+  const compression    = buffer.readUInt16LE(cdOffset + 10);
+  const compressedSize = buffer.readUInt32LE(cdOffset + 20);
+  const localHdrOffset = buffer.readUInt32LE(cdOffset + 42);
+
+  // 3) Skip past the local file header to get to the compressed payload.
+  if (buffer.readUInt32LE(localHdrOffset) !== 0x04034b50) {
+    throw new Error("ZIP: local file header signature mismatch");
+  }
+  const lfhNameLen  = buffer.readUInt16LE(localHdrOffset + 26);
+  const lfhExtraLen = buffer.readUInt16LE(localHdrOffset + 28);
+  const dataStart   = localHdrOffset + 30 + lfhNameLen + lfhExtraLen;
+  const compressed  = buffer.subarray(dataStart, dataStart + compressedSize);
+
+  if (compression === 0) return compressed;            // STORED
+  if (compression === 8) return inflateRawSync(compressed); // DEFLATE
+  throw new Error(`ZIP: unsupported compression method ${compression}`);
 }
 
 async function downloadCorpList(): Promise<DartCorp[]> {
@@ -447,18 +468,23 @@ async function downloadCorpList(): Promise<DartCorp[]> {
   const zipBuf = Buffer.from(arrayBuf);
   const xml = unzipFirst(zipBuf).toString("utf-8");
 
-  // The XML is ~10MB with ~3700 entries. Regex parse is fastest in Node without xml deps.
+  // XML is ~28 MB with ~118 k <list> blocks. Block-based parsing is robust to
+  // field order/whitespace and the fact that DART encodes "no stock code" as
+  // a single space character (" ") inside the <stock_code> tag.
   const corps: DartCorp[] = [];
-  const re = /<list>\s*<corp_code>([^<]+)<\/corp_code>\s*<corp_name>([^<]+)<\/corp_name>\s*<corp_eng_name>[^<]*<\/corp_eng_name>\s*<stock_code>([^<]*)<\/stock_code>/g;
+  const listBlockRe = /<list>([\s\S]*?)<\/list>/g;
+  const codeRe = /<corp_code>([^<]*)<\/corp_code>/;
+  const nameRe = /<corp_name>([^<]*)<\/corp_name>/;
+  const stkRe  = /<stock_code>([^<]*)<\/stock_code>/;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(xml)) !== null) {
-    const stockCode = m[3].trim();
-    if (!stockCode) continue; // Skip unlisted corporations
-    corps.push({
-      corpCode:  m[1].trim(),
-      corpName:  m[2].trim(),
-      stockCode,
-    });
+  while ((m = listBlockRe.exec(xml)) !== null) {
+    const block     = m[1];
+    const stockCode = stkRe.exec(block)?.[1]?.trim() ?? "";
+    if (!stockCode) continue; // Skip unlisted corps (DART stores " " for unlisted)
+    const corpCode  = codeRe.exec(block)?.[1]?.trim() ?? "";
+    const corpName  = nameRe.exec(block)?.[1]?.trim() ?? "";
+    if (!corpCode || !corpName) continue;
+    corps.push({ corpCode, corpName, stockCode });
   }
   return corps;
 }
