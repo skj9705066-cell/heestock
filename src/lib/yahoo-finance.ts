@@ -377,7 +377,10 @@ export async function searchYFSymbols(query: string): Promise<YFSearchResult[]> 
       }>;
     };
     return (json.quotes ?? [])
-      .filter(q => q.typeDisp === "Equity" || q.typeDisp === "ETF")
+      .filter(q => {
+        const t = (q.typeDisp ?? "").toLowerCase();
+        return t === "equity" || t === "etf";
+      })
       .slice(0, 8)
       .map(q => {
         const ex = q.exchange ?? "";

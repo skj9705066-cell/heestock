@@ -3,9 +3,6 @@
 import { fetchYFQuotes, type YFQuote } from "./yahoo-finance";
 import type { MarketIndex, SectorData, InvestorFlow } from "@/types/market";
 import type { TopStock } from "@/types/stock";
-import {
-  mockMarketIndices, mockSectorData, mockTopStocks,
-} from "./mock-data";
 
 // ── Symbol pools ──────────────────────────────────────────────────────────────
 
@@ -84,14 +81,9 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
       });
     }
 
-    // Fill any missing with mock fallback
-    const found = new Set(result.map(r => r.symbol));
-    for (const m of mockMarketIndices) {
-      if (!found.has(m.symbol)) result.push(m);
-    }
     return result.slice(0, 4);
   } catch {
-    return mockMarketIndices;
+    return [];
   }
 }
 
@@ -129,9 +121,9 @@ export async function getTopStocks(): Promise<TopStock[]> {
       .slice(0, 10)
       .map((s, i) => ({ ...s, rank: i + 1 }));
 
-    return stocks.length >= 5 ? stocks : mockTopStocks;
+    return stocks;
   } catch {
-    return mockTopStocks;
+    return [];
   }
 }
 
@@ -174,9 +166,9 @@ export async function getSectors(): Promise<SectorData[]> {
       });
     }
 
-    return sectors.length >= 4 ? sectors : mockSectorData;
+    return sectors;
   } catch {
-    return mockSectorData;
+    return [];
   }
 }
 
@@ -232,61 +224,8 @@ function parseNaverFlow(html: string): InvestorFlow[] | null {
   }
 }
 
-async function fetchKospi5dFlow(): Promise<InvestorFlow[] | null> {
-  // Use KOSPI 5-day chart to estimate daily investor flows
-  // Pattern: on up days foreign/institution tend to net-buy, individual net-sells; vice versa
-  try {
-    const { fetchYFPriceHistory } = await import("./yahoo-finance");
-    const pts = await fetchYFPriceHistory("^KS11", "5d");
-    if (pts.length < 2) return null;
-
-    const days: InvestorFlow[] = [];
-    for (let i = 1; i < pts.length; i++) {
-      const prev   = pts[i - 1].close;
-      const curr   = pts[i].close;
-      const chgPct = prev > 0 ? ((curr - prev) / prev) * 100 : 0;
-      const date   = new Date(pts[i].ts * 1000);
-      const mm     = String(date.getMonth() + 1).padStart(2, "0");
-      const dd     = String(date.getDate()).padStart(2, "0");
-      // Scale factor: 1% move ≈ 1000억 net foreign buy
-      const scale   = 1000;
-      const noise   = () => Math.round((Math.random() - 0.5) * 300);
-      const foreign = Math.round(chgPct * scale * 0.6) + noise();
-      const inst    = Math.round(chgPct * scale * 0.3) + noise();
-      days.push({ date: `${mm}/${dd}`, foreign, institution: inst, individual: -(foreign + inst) + noise() });
-    }
-    return days.length >= 3 ? days : null;
-  } catch {
-    return null;
-  }
-}
-
-function marketInformedFlow(indices: MarketIndex[]): InvestorFlow[] {
-  const kospi = indices.find(i => i.symbol === "^KS11");
-  const chg   = kospi?.changePercent ?? 0;
-
-  const today = new Date();
-  const days: InvestorFlow[] = [];
-  for (let d = 4; d >= 0; d--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - d - (d >= 2 ? 1 : 0));
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const dd = String(date.getDate()).padStart(2, "0");
-    const factor      = d === 0 ? chg : (Math.random() - 0.48) * 2;
-    const foreignBase = Math.round(factor * 800 + (Math.random() - 0.5) * 400);
-    const instBase    = Math.round(factor * 300 + (Math.random() - 0.5) * 200);
-    days.push({
-      date:        `${mm}/${dd}`,
-      foreign:     foreignBase,
-      institution: instBase,
-      individual:  -(foreignBase + instBase) + Math.round((Math.random() - 0.5) * 200),
-    });
-  }
-  return days;
-}
-
-export async function getInvestorFlow(indices?: MarketIndex[]): Promise<InvestorFlow[]> {
-  // 1. Try Naver Finance HTML scraping
+export async function getInvestorFlow(): Promise<InvestorFlow[]> {
+  // Real net-buy data from Naver Finance HTML scraping.
   try {
     const res = await fetch(
       "https://finance.naver.com/sise/investorDealTrend.naver",
@@ -298,21 +237,12 @@ export async function getInvestorFlow(indices?: MarketIndex[]): Promise<Investor
     if (html.includes("error_content")) throw new Error("Naver error page");
     const parsed = parseNaverFlow(html);
     if (parsed && parsed.length >= 3) return parsed;
-    throw new Error("Parse failed");
   } catch {
     // fall through
   }
 
-  // 2. Estimate from real KOSPI 5-day price history
-  try {
-    const flow5d = await fetchKospi5dFlow();
-    if (flow5d) return flow5d;
-  } catch {
-    // fall through
-  }
-
-  // 3. Last resort: direction-informed estimation
-  return marketInformedFlow(indices?.length ? indices : mockMarketIndices);
+  // No real data available — caller renders empty state.
+  return [];
 }
 
 // ── Commodities & Bonds ───────────────────────────────────────────────────────

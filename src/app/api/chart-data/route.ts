@@ -15,44 +15,6 @@ export interface OHLCVPoint {
 const cache = new Map<string, { data: OHLCVPoint[]; ts: number }>();
 const CACHE_TTL = 60_000;
 
-// ── Mock fallback ────────────────────────────────────────────────────────────
-
-function generateMockData(symbol: string, count: number): OHLCVPoint[] {
-  const base =
-    symbol.includes("KS11") ? 2620 :
-    symbol.includes("KQ11") ? 868  :
-    symbol.includes("IXIC") ? 19100 : 5280;
-
-  const data: OHLCVPoint[] = [];
-  let price = base;
-  const now = new Date();
-
-  for (let i = count; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    if (d.getDay() === 0 || d.getDay() === 6) continue;
-
-    const drift  = (Math.random() - 0.47) * price * 0.018;
-    const open   = price;
-    const close  = Math.max(price + drift, 1);
-    const hi     = Math.max(open, close) * (1 + Math.random() * 0.006);
-    const lo     = Math.min(open, close) * (1 - Math.random() * 0.006);
-    const volume = Math.floor(Math.random() * 12_000_000 + 800_000);
-
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-    data.push({
-      date: d.toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }),
-      open:   round2(open),
-      high:   round2(hi),
-      low:    round2(lo),
-      close:  round2(close),
-      volume,
-    });
-    price = close;
-  }
-  return data;
-}
-
 // ── Yahoo Finance ────────────────────────────────────────────────────────────
 
 async function fetchYahoo(
@@ -181,12 +143,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 3) Fallback to mock
+  // 3) No real data available — return empty array; UI renders an empty-state message.
   if (!data || data.length < 5) {
-    const count = range === "6mo" ? 120 : range === "2y" ? 104 : 60;
-    data = generateMockData(symbol, count);
-    console.warn("[chart-data] Using mock data for", symbol);
-    return Response.json(data, { headers: { "X-Fallback": "mock" } });
+    return Response.json([], { headers: { "X-No-Data": "true" } });
   }
 
   cache.set(cacheKey, { data, ts: Date.now() });

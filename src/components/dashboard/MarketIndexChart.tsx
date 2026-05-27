@@ -7,7 +7,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { RefreshCw, BarChart2, Activity, Clock } from "lucide-react";
+import { RefreshCw, BarChart2, Activity, Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import type { OHLCVPoint } from "@/app/api/chart-data/route";
@@ -222,7 +222,7 @@ export function MarketIndexChart() {
   const [refreshIdx,  setRefreshIdx]  = useState(1);
   const [rawData,     setRawData]     = useState<OHLCVPoint[]>([]);
   const [isLoading,   setIsLoading]   = useState(true);
-  const [isFallback,  setIsFallback]  = useState(false);
+  const [noData,      setNoData]      = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -238,7 +238,7 @@ export function MarketIndexChart() {
       );
       const data: OHLCVPoint[] = await res.json();
       setRawData(data);
-      setIsFallback(res.headers.get("X-Fallback") === "mock");
+      setNoData(res.headers.get("X-No-Data") === "true" || data.length === 0);
       setLastUpdated(new Date());
     } catch {
       // keep existing data on error
@@ -285,9 +285,9 @@ export function MarketIndexChart() {
                 ? lastUpdated.toLocaleTimeString("ko-KR")
                 : "로딩 중..."}
             </span>
-            {isFallback && (
-              <span className="text-xs text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
-                샘플 데이터
+            {noData && !isLoading && (
+              <span className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">
+                데이터 없음
               </span>
             )}
           </div>
@@ -408,6 +408,26 @@ export function MarketIndexChart() {
           <div className="flex flex-col items-center gap-2">
             <LoadingSpinner size="lg" />
             <p className="text-xs text-slate-400">차트 데이터 로딩 중...</p>
+          </div>
+        </div>
+      ) : noData ? (
+        <div className="flex items-center justify-center h-72">
+          <div className="flex flex-col items-center gap-3 text-center max-w-sm">
+            <AlertCircle className="w-10 h-10 text-slate-300 dark:text-slate-600" />
+            <div>
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                차트 데이터를 불러올 수 없습니다
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Yahoo Finance · Alpha Vantage API 호출 실패 — 잠시 후 새로고침을 시도해주세요
+              </p>
+            </div>
+            <button
+              onClick={() => fetchData()}
+              className="mt-1 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-3 h-3" /> 다시 시도
+            </button>
           </div>
         </div>
       ) : (

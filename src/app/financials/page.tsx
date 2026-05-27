@@ -180,6 +180,24 @@ FCF (최근): ${finData.annual.at(-1)?.freeCashFlow?.toLocaleString() ?? "—"}
         {/* Financial data */}
         {!isLoading && finData && (
           <>
+            {/* MOCK DATA WARNING — shown at top when real API failed and preset/generated data is being displayed */}
+            {finData.isMock && (
+              <div className="flex items-start gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border-2 border-red-300 dark:border-red-800 rounded-lg">
+                <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-red-700 dark:text-red-300">
+                    ⚠️ 실데이터를 불러오지 못해 임시 데이터를 표시 중입니다
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                    {finData.market === "KR"
+                      ? "DART OpenAPI 호출 실패 — 아래 수치는 사전 정의된 추정값 또는 절차적으로 생성된 값이며, 실제 공시 데이터가 아닙니다."
+                      : "Alpha Vantage / Yahoo Finance 호출 실패 — 아래 수치는 사전 정의된 추정값 또는 절차적으로 생성된 값이며, 실제 공시 데이터가 아닙니다."}
+                    {" "}투자 판단에 사용하지 마세요.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Stock info + controls bar */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
@@ -190,6 +208,9 @@ FCF (최근): ${finData.annual.at(-1)?.freeCashFlow?.toLocaleString() ?? "—"}
                   {finData.market}
                 </Badge>
                 <span className="text-sm text-slate-400 font-mono">{finData.symbol}</span>
+                {finData.isMock && (
+                  <Badge variant="red">임시 데이터</Badge>
+                )}
               </div>
 
               <div className="flex gap-0.5 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg ml-auto">
@@ -279,14 +300,6 @@ FCF (최근): ${finData.annual.at(-1)?.freeCashFlow?.toLocaleString() ?? "—"}
               )}
             </div>
 
-            {finData.isMock && (
-              <div className="flex items-start gap-2 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm">
-                <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                <span className="text-amber-700 dark:text-amber-300">
-                  한국 주식은 추정 데이터를 사용합니다. Alpha Vantage API 키를 연동하면 미국 주식의 실제 데이터를 볼 수 있습니다.
-                </span>
-              </div>
-            )}
           </>
         )}
       </div>

@@ -27,8 +27,7 @@ export async function GET(req: NextRequest) {
         return Response.json(data);
       }
       case "investor-flow": {
-        const indices = await getMarketIndices();
-        const data    = await getInvestorFlow(indices);
+        const data = await getInvestorFlow();
         return Response.json(data);
       }
       case "commodities": {
@@ -43,7 +42,7 @@ export async function GET(req: NextRequest) {
           getCommoditiesAndBonds(),
         ]);
         const idxData = indices.status  === "fulfilled" ? indices.value  : [];
-        const invFlow = await getInvestorFlow(idxData);
+        const invFlow = await getInvestorFlow();
         return Response.json({
           indices:      idxData,
           sectors:      sectors.status      === "fulfilled" ? sectors.value      : [],
