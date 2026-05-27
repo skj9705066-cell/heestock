@@ -19,12 +19,12 @@ interface ChatInterfaceProps {
 }
 
 const QUICK_QUESTIONS = [
-  "수급 분석을 해줘",
-  "기술적 분석 해줘",
-  "펀더멘탈 분석 해줘",
-  "투자 리스크는?",
-  "목표주가 알려줘",
-  "동종업계 비교 해줘",
+  "실시간 데이터 기준 종합 분석을 해줘",
+  "현재가 기준 밸류에이션 평가",
+  "최신 분기 실적과 성장성 분석",
+  "52주 고저 대비 현재 위치는?",
+  "거래량/수급 상황 분석",
+  "오늘 기준 투자 포인트 정리",
 ];
 
 export function ChatInterface({
@@ -118,7 +118,7 @@ export function ChatInterface({
                   : "종목을 선택하고 질문해보세요"}
               </h3>
               <p className="text-sm text-slate-400 mt-1">
-                수급, 기술적, 펀더멘탈 분석을 Claude AI가 도와드립니다
+                Yahoo Finance · DART 실시간 데이터를 기반으로 Claude AI가 분석합니다
               </p>
             </div>
             {stockName && (

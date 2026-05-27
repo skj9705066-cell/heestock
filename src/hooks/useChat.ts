@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import type { ChatMessage, ChatSession } from "@/types/chat";
 import { generateId } from "@/lib/utils";
 
-export function useChat(stockSymbol?: string, stockName?: string) {
+export function useChat(stockSymbol?: string, stockName?: string, market?: "KR" | "US") {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId] = useState(generateId());
@@ -45,6 +45,7 @@ export function useChat(stockSymbol?: string, stockName?: string) {
             })),
             stockSymbol,
             stockName,
+            market,
           }),
         });
 
@@ -98,7 +99,7 @@ export function useChat(stockSymbol?: string, stockName?: string) {
         setIsLoading(false);
       }
     },
-    [messages, stockSymbol, stockName]
+    [messages, stockSymbol, stockName, market]
   );
 
   const clearMessages = useCallback(() => {

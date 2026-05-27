@@ -5,6 +5,7 @@ import { StockSearch } from "@/components/ai-analysis/StockSearch";
 import { ChatInterface } from "@/components/ai-analysis/ChatInterface";
 import { ChatHistory } from "@/components/ai-analysis/ChatHistory";
 import { ChatPDFTemplate } from "@/components/ai-analysis/ChatPDFTemplate";
+import { StockSnapshotPanel } from "@/components/ai-analysis/StockSnapshotPanel";
 import { exportElementAsPDF } from "@/lib/pdf-export";
 import { useChat } from "@/hooks/useChat";
 import { History, ChevronLeft, ChevronRight } from "lucide-react";
@@ -25,7 +26,7 @@ export default function AIAnalysisPage() {
   const chatPdfRef = useRef<HTMLDivElement>(null);
 
   const { messages, isLoading, sendMessage, clearMessages, getSession } =
-    useChat(selectedStock?.symbol, selectedStock?.name);
+    useChat(selectedStock?.symbol, selectedStock?.name, selectedStock?.market);
 
   const handleStockSelect = (stock: SearchResult | null) => {
     setSelectedStock(stock);
@@ -117,6 +118,15 @@ export default function AIAnalysisPage() {
             selectedStock={selectedStock}
           />
         </div>
+
+        {/* Live snapshot panel (real-time data above chat) */}
+        {selectedStock && (
+          <StockSnapshotPanel
+            symbol={selectedStock.symbol}
+            name={selectedStock.name}
+            market={selectedStock.market}
+          />
+        )}
 
         {/* Chat Area */}
         <div className="flex-1 overflow-hidden">
