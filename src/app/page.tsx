@@ -8,7 +8,7 @@ import {
   getMarketIndices,
   getTopStocks,
   getSectors,
-  getInvestorFlow,
+  getMarketVolumeTrend,
 } from "@/lib/market-data";
 import { Clock, AlertCircle } from "lucide-react";
 
@@ -19,17 +19,17 @@ export default async function DashboardPage() {
   const now = new Date();
 
   // Fetch all data in parallel. Empty arrays on failure — each section renders its own empty state.
-  const [idxRes, topRes, secRes, flowRes] = await Promise.allSettled([
+  const [idxRes, topRes, secRes, volRes] = await Promise.allSettled([
     getMarketIndices(),
     getTopStocks(),
     getSectors(),
-    getInvestorFlow(),
+    getMarketVolumeTrend(),
   ]);
 
-  const indices   = idxRes.status  === "fulfilled" ? idxRes.value  : [];
-  const topStocks = topRes.status  === "fulfilled" ? topRes.value  : [];
-  const sectors   = secRes.status  === "fulfilled" ? secRes.value  : [];
-  const flowData  = flowRes.status === "fulfilled" ? flowRes.value : [];
+  const indices    = idxRes.status === "fulfilled" ? idxRes.value : [];
+  const topStocks  = topRes.status === "fulfilled" ? topRes.value : [];
+  const sectors    = secRes.status === "fulfilled" ? secRes.value : [];
+  const volumeData = volRes.status === "fulfilled" ? volRes.value : [];
 
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6 min-h-screen">
@@ -74,10 +74,10 @@ export default async function DashboardPage() {
           {indices.length > 0 ? (
             <MarketSummaryAI indices={indices} />
           ) : null}
-          {flowData.length > 0 ? (
-            <InvestorTrend data={flowData} />
+          {volumeData.length > 0 ? (
+            <InvestorTrend data={volumeData} />
           ) : (
-            <EmptyState message="수급 데이터를 불러올 수 없습니다 (네이버 금융 응답 실패)" />
+            <EmptyState message="거래대금 데이터를 불러올 수 없습니다" />
           )}
         </div>
 

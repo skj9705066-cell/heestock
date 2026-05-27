@@ -28,17 +28,17 @@ function priceSuffix(currency: string) {
   return currency === "KRW" ? "원" : "";
 }
 function fmtPrice(n: number | undefined, currency: string, digits?: number) {
-  if (n === undefined || Number.isNaN(n)) return "-";
+  if (n === undefined || Number.isNaN(n)) return "N/A";
   const d = digits ?? (currency === "KRW" ? 0 : 2);
   return `${pricePrefix(currency)}${n.toLocaleString("ko-KR", { maximumFractionDigits: d })}${priceSuffix(currency)}`;
 }
 function fmtPct(n: number | undefined) {
-  if (n === undefined || Number.isNaN(n)) return "-";
+  if (n === undefined || Number.isNaN(n)) return "N/A";
   const sign = n > 0 ? "+" : "";
   return `${sign}${n.toFixed(2)}%`;
 }
 function fmtMcap(n: number | undefined, currency: string) {
-  if (!n) return "-";
+  if (!n) return "N/A";
   if (currency === "KRW") {
     if (n >= 1e12) return `${(n / 1e12).toFixed(2)}조원`;
     if (n >= 1e8) return `${Math.round(n / 1e8).toLocaleString("ko-KR")}억원`;
@@ -50,7 +50,7 @@ function fmtMcap(n: number | undefined, currency: string) {
   return `$${n.toLocaleString()}`;
 }
 function fmtFin(n: number | undefined, unit: string) {
-  if (n === undefined) return "-";
+  if (n === undefined) return "N/A";
   return `${n.toLocaleString("ko-KR")} ${unit}`;
 }
 
@@ -111,7 +111,7 @@ export function StockSnapshotPanel({ symbol, name, market }: Props) {
   const f = snap.financials;
 
   return (
-    <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-b from-slate-50 to-white dark:from-dark-900/60 dark:to-transparent">
+    <div className="flex-shrink-0 max-h-[44vh] md:max-h-[40vh] overflow-y-auto px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-b from-slate-50 to-white dark:from-dark-900/60 dark:to-transparent">
       {/* Header: date + refresh */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -162,7 +162,7 @@ export function StockSnapshotPanel({ symbol, name, market }: Props) {
         <Metric
           icon={<Activity className="w-3.5 h-3.5" />}
           label="거래량"
-          value={q?.volume ? q.volume.toLocaleString("ko-KR") : "-"}
+          value={q?.volume ? q.volume.toLocaleString("ko-KR") : "N/A"}
         />
         <Metric
           icon={<BarChart3 className="w-3.5 h-3.5" />}
@@ -179,15 +179,15 @@ export function StockSnapshotPanel({ symbol, name, market }: Props) {
         />
         <Metric
           label="PER (TTM)"
-          value={k?.trailingPE !== undefined ? `${k.trailingPE.toFixed(2)}배` : "-"}
+          value={k?.trailingPE !== undefined ? `${k.trailingPE.toFixed(2)}배` : "N/A"}
         />
         <Metric
           label="PBR"
-          value={k?.priceToBook !== undefined ? `${k.priceToBook.toFixed(2)}배` : "-"}
+          value={k?.priceToBook !== undefined ? `${k.priceToBook.toFixed(2)}배` : "N/A"}
         />
         <Metric
           label="ROE"
-          value={k?.returnOnEquity !== undefined ? `${k.returnOnEquity.toFixed(2)}%` : "-"}
+          value={k?.returnOnEquity !== undefined ? `${k.returnOnEquity.toFixed(2)}%` : "N/A"}
         />
         <Metric
           label="1년 수익률"
@@ -245,13 +245,18 @@ function Metric({
   value: string;
   valueClass?: string;
 }) {
+  const isNA = value === "N/A";
   return (
-    <div className="bg-white dark:bg-dark-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-2">
-      <div className="flex items-center gap-1 text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">
+    <div className="bg-white dark:bg-dark-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-2 h-[52px] flex flex-col justify-between">
+      <div className="flex items-center gap-1 text-[10px] text-slate-400 uppercase tracking-wider">
         {icon}
         {label}
       </div>
-      <div className={cn("text-sm font-semibold text-slate-800 dark:text-slate-100", valueClass)}>
+      <div className={cn(
+        "text-sm font-semibold truncate",
+        isNA ? "text-slate-400" : "text-slate-800 dark:text-slate-100",
+        valueClass,
+      )}>
         {value}
       </div>
     </div>

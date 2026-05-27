@@ -7,14 +7,14 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
+import { TrendingUp, TrendingDown } from "lucide-react";
 import { cn, formatNumber } from "@/lib/utils";
-import type { InvestorFlow } from "@/types/market";
+import type { MarketVolumePoint } from "@/types/market";
 
-interface InvestorTrendProps {
-  data: InvestorFlow[];
+interface Props {
+  data: MarketVolumePoint[];
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -22,77 +22,63 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return (
     <div className="bg-white dark:bg-dark-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 shadow-xl text-sm">
       <p className="font-semibold text-slate-700 dark:text-slate-300 mb-2">{label}</p>
-      {payload.map((entry: any) => (
-        <div key={entry.name} className="flex items-center justify-between gap-4">
-          <span className="text-slate-500 dark:text-slate-400">{entry.name}</span>
-          <span
-            className={cn(
-              "font-mono font-medium",
-              entry.value > 0 ? "text-red-500" : "text-blue-500"
-            )}
-          >
-            {entry.value > 0 ? "+" : ""}
-            {formatNumber(entry.value)}억
-          </span>
-        </div>
-      ))}
+      <p className="font-mono font-bold text-blue-500">
+        {formatNumber(payload[0].value)}억원
+      </p>
     </div>
   );
 };
 
-export function InvestorTrend({ data }: InvestorTrendProps) {
-  const todayData = data[data.length - 1];
-
-  const summary = [
-    {
-      label: "외국인",
-      value: todayData?.foreign ?? 0,
-      color: "text-purple-500",
-    },
-    {
-      label: "기관",
-      value: todayData?.institution ?? 0,
-      color: "text-amber-500",
-    },
-    {
-      label: "개인",
-      value: todayData?.individual ?? 0,
-      color: "text-slate-400",
-    },
-  ];
+// Renamed conceptually to MarketVolumeTrend but kept the InvestorTrend export
+// name so existing imports / route references in src/app/page.tsx and the
+// dashboard skeleton don't break in this refactor.
+export function InvestorTrend({ data }: Props) {
+  const today     = data[data.length - 1];
+  const yesterday = data[data.length - 2];
+  const change    = today && yesterday && yesterday.value > 0
+    ? ((today.value - yesterday.value) / yesterday.value) * 100
+    : null;
+  const up = (change ?? 0) >= 0;
 
   return (
     <div className="card p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="section-title">수급 동향</h3>
-        <span className="text-xs text-slate-400">최근 5거래일 (억원)</span>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="section-title">코스피 거래대금 추이</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">주요 31개 종목 합산 · 최근 5거래일</p>
+        </div>
+        <span className="text-xs text-slate-400">단위: 억원</span>
       </div>
 
-      {/* 오늘 요약 */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        {summary.map((item) => (
-          <div
-            key={item.label}
-            className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2.5 text-center"
-          >
-            <p className="text-xs text-slate-400 mb-1">{item.label}</p>
-            <p
-              className={cn(
-                "text-sm font-bold font-mono",
-                item.value > 0 ? "text-red-500" : "text-blue-500"
-              )}
-            >
-              {item.value > 0 ? "+" : ""}
-              {formatNumber(item.value)}
+      {/* Today summary */}
+      {today ? (
+        <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[11px] text-slate-400 mb-0.5">최근일 ({today.date})</p>
+            <p className="text-lg font-bold font-mono text-slate-900 dark:text-white">
+              {formatNumber(today.value)}억원
             </p>
           </div>
-        ))}
-      </div>
+          {change !== null && (
+            <span className={cn(
+              "inline-flex items-center gap-1 text-xs font-mono font-medium",
+              up ? "text-red-500" : "text-blue-500",
+            )}>
+              {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {up ? "+" : ""}{change.toFixed(1)}% 전일대비
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-sm text-slate-400 text-center">
+          거래대금 데이터 없음
+        </div>
+      )}
 
-      {/* 차트 */}
+      {/* Bar chart */}
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} barSize={10} barGap={2}>
+          <BarChart data={data}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="#334155"
@@ -110,18 +96,15 @@ export function InvestorTrend({ data }: InvestorTrendProps) {
               axisLine={false}
               tickLine={false}
               tickFormatter={(v) => formatNumber(v)}
-              width={45}
+              width={50}
             />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend
-              wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }}
-              formatter={(value) => (
-                <span style={{ color: "#94a3b8" }}>{value}</span>
-              )}
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: "#94a3b820" }} />
+            <Bar
+              dataKey="value"
+              name="거래대금"
+              fill="#3b82f6"
+              radius={[4, 4, 0, 0]}
             />
-            <Bar dataKey="foreign" name="외국인" fill="#a855f7" radius={[2, 2, 0, 0]} />
-            <Bar dataKey="institution" name="기관" fill="#f59e0b" radius={[2, 2, 0, 0]} />
-            <Bar dataKey="individual" name="개인" fill="#64748b" radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

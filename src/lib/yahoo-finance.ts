@@ -265,6 +265,7 @@ export async function resolveKrYahooSymbol(stockCode: string): Promise<string> {
 export interface PricePoint {
   ts: number;    // Unix timestamp in seconds
   close: number;
+  volume?: number; // Daily share volume — used to derive 거래대금 (close × volume)
 }
 
 export async function fetchYFPriceHistory(
@@ -287,11 +288,14 @@ export async function fetchYFPriceHistory(
       const url2 = url.replace(YF_BASE, YF_ALT);
       const res2 = await fetch(url2, { headers: YF_HEADERS, signal: AbortSignal.timeout(12_000), cache: "no-store" });
       if (!res2.ok) return [];
-      const json2 = await res2.json() as { chart: { result: Array<{ timestamp: number[]; indicators: { quote: Array<{ close: (number | null)[] }> } }> | null } };
+      const json2 = await res2.json() as { chart: { result: Array<{ timestamp: number[]; indicators: { quote: Array<{ close: (number | null)[]; volume?: (number | null)[] }> } }> | null } };
       const r2 = json2.chart?.result?.[0];
       if (!r2?.timestamp) return [];
-      const c2 = r2.indicators.quote[0]?.close ?? [];
-      const pts2 = r2.timestamp.map((ts, i) => ({ ts, close: c2[i] ?? 0 })).filter(p => p.close > 0);
+      const c2 = r2.indicators.quote[0]?.close  ?? [];
+      const v2 = r2.indicators.quote[0]?.volume ?? [];
+      const pts2 = r2.timestamp
+        .map((ts, i) => ({ ts, close: c2[i] ?? 0, volume: v2[i] ?? undefined }))
+        .filter(p => p.close > 0);
       _cache.set(key, { data: pts2, ts: Date.now() });
       return pts2;
     }
@@ -299,14 +303,15 @@ export async function fetchYFPriceHistory(
     const json = await res.json() as {
       chart: { result: Array<{
         timestamp: number[];
-        indicators: { quote: Array<{ close: (number | null)[] }> };
+        indicators: { quote: Array<{ close: (number | null)[]; volume?: (number | null)[] }> };
       }> | null };
     };
     const result = json.chart?.result?.[0];
     if (!result?.timestamp) return [];
-    const closes = result.indicators.quote[0]?.close ?? [];
+    const closes  = result.indicators.quote[0]?.close  ?? [];
+    const volumes = result.indicators.quote[0]?.volume ?? [];
     const points: PricePoint[] = result.timestamp
-      .map((ts, i) => ({ ts, close: closes[i] ?? 0 }))
+      .map((ts, i) => ({ ts, close: closes[i] ?? 0, volume: volumes[i] ?? undefined }))
       .filter(p => p.close > 0);
     _cache.set(key, { data: points, ts: Date.now() });
     return points;

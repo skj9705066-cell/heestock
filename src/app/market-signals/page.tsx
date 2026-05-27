@@ -97,27 +97,35 @@ export default function MarketSignalsPage() {
           {/* Market Charts */}
           <section>
             <h2 className="section-title mb-3">시장 지표</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <MarketChart
-                data={data.adrHistory}
-                title="ADR (등락비율) — 풀 종목 기준"
-                dataKey="adr"
-                color="#10b981"
-                referenceValue={1.0}
-                referenceLabel="기준선 1.0"
-              />
-              <MarketChart
-                data={data.adrHistory.map(d => ({
-                  ...d,
-                  adr: d.advancers / Math.max(d.decliners, 1),
-                }))}
-                title="상승/하락 비율"
-                dataKey="adr"
-                color="#a855f7"
-                referenceValue={1.0}
-                referenceLabel="균형선"
-              />
-            </div>
+            {data.adrHistory.length >= 2 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <MarketChart
+                  data={data.adrHistory}
+                  title="ADR (등락비율) — 풀 종목 기준"
+                  dataKey="adr"
+                  color="#10b981"
+                  referenceValue={1.0}
+                  referenceLabel="기준선 1.0"
+                />
+                <MarketChart
+                  data={data.adrHistory.map(d => ({
+                    ...d,
+                    adr: d.advancers / Math.max(d.decliners, 1),
+                  }))}
+                  title="상승/하락 비율"
+                  dataKey="adr"
+                  color="#a855f7"
+                  referenceValue={1.0}
+                  referenceLabel="균형선"
+                />
+              </div>
+            ) : data.adrHistory.length === 1 ? (
+              <ADRTodayCard entry={data.adrHistory[0]} />
+            ) : (
+              <div className="card p-6 text-sm text-slate-400 text-center">
+                ADR 데이터 없음
+              </div>
+            )}
           </section>
 
           {/* Leader Sectors & 52w Highs */}
@@ -258,6 +266,41 @@ export default function MarketSignalsPage() {
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+// Renders today's single-day ADR snapshot when historical pool data isn't
+// available — replaces the empty/random-looking 1-point chart with a clear
+// stat card.
+function ADRTodayCard({ entry }: { entry: ADRData }) {
+  const ratio = entry.advancers / Math.max(entry.decliners, 1);
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="section-title text-base">ADR (등락비율) — 오늘</h3>
+          <Badge variant="yellow" size="sm">과거 데이터 없음</Badge>
+        </div>
+        <p className="text-3xl font-bold font-mono text-emerald-500 mb-1">
+          {entry.adr.toFixed(2)}
+        </p>
+        <p className="text-xs text-slate-400">
+          상승 {entry.advancers}개 / 하락 {entry.decliners}개 · 기준선 1.0
+        </p>
+      </div>
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="section-title text-base">상승/하락 비율 — 오늘</h3>
+          <Badge variant="yellow" size="sm">과거 데이터 없음</Badge>
+        </div>
+        <p className="text-3xl font-bold font-mono text-purple-500 mb-1">
+          {ratio.toFixed(2)}
+        </p>
+        <p className="text-xs text-slate-400">
+          {entry.advancers} / {entry.decliners} · 균형선 1.0
+        </p>
+      </div>
     </div>
   );
 }

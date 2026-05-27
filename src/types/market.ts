@@ -7,11 +7,11 @@ export interface MarketIndex {
   market: "KR" | "US";
 }
 
-export interface InvestorFlow {
-  date: string;
-  foreign: number;
-  institution: number;
-  individual: number;
+// Daily KOSPI pool trading value (거래대금 in 억원). Yahoo-based aggregate of
+// the 31-stock pool used in market-data.ts.
+export interface MarketVolumePoint {
+  date:  string; // "MM.DD"
+  value: number; // 거래대금 in 억원
 }
 
 export interface SectorData {

@@ -128,8 +128,9 @@ export default function AIAnalysisPage() {
           />
         )}
 
-        {/* Chat Area */}
-        <div className="flex-1 overflow-hidden">
+        {/* Chat Area — flex-1 with min-h-0 ensures the chat keeps its share of
+            the column when the snapshot panel above it grows. */}
+        <div className="flex-1 min-h-0 overflow-hidden">
           <ChatInterface
             messages={messages}
             isLoading={isLoading}

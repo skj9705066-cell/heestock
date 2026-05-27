@@ -1,7 +1,7 @@
-// Higher-level market data using Yahoo Finance + Naver Finance
+// Higher-level market data using Yahoo Finance only.
 
-import { fetchYFQuotes, type YFQuote } from "./yahoo-finance";
-import type { MarketIndex, SectorData, InvestorFlow } from "@/types/market";
+import { fetchYFQuotes, fetchYFPriceHistory, type YFQuote } from "./yahoo-finance";
+import type { MarketIndex, SectorData, MarketVolumePoint } from "@/types/market";
 import type { TopStock } from "@/types/stock";
 
 // ── Symbol pools ──────────────────────────────────────────────────────────────
@@ -172,77 +172,45 @@ export async function getSectors(): Promise<SectorData[]> {
   }
 }
 
-// ── Investor Flow (Naver Finance) ─────────────────────────────────────────────
+// ── KOSPI 거래대금 추이 (Yahoo-based, no Naver scrape) ───────────────────────
+// Aggregates daily 거래대금 = close × volume across the KR_POOL constituents.
+// More stable than scraping Naver's investor-flow page (which was returning
+// EUC-KR HTML that frequently failed to parse).
 
-const NAVER_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "ko-KR,ko;q=0.9",
-  "Referer":         "https://finance.naver.com/",
-};
-
-function parseNaverFlow(html: string): InvestorFlow[] | null {
+export async function getMarketVolumeTrend(): Promise<MarketVolumePoint[]> {
   try {
-    // Extract date headers: 12.20 format
-    const dateMatches = [...html.matchAll(/class="date">(\d{2}\.\d{2})/g)];
-    const dates = dateMatches.map(m => m[1]).slice(0, 5);
-    if (!dates.length) return null;
+    const symbols  = Object.keys(KR_POOL);
+    const histories = await Promise.allSettled(
+      symbols.map(s => fetchYFPriceHistory(s, "5d")),
+    );
 
-    // Extract net buy values for investor types
-    // Naver returns EUC-KR decoded HTML; looks for rows with investor labels
-    function extractNetBuy(label: string): number[] {
-      const re = new RegExp(label + "[\\s\\S]*?</tr>", "g");
-      const row = html.match(re)?.[0] ?? "";
-      const numRe = />([\+\-]?[\d,]+)</g;
-      const vals: number[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = numRe.exec(row)) !== null) {
-        const n = parseInt(m[1].replace(/,/g, ""), 10);
-        if (!isNaN(n)) vals.push(n);
+    // ts → 거래대금 in raw KRW
+    const dayMap = new Map<number, number>();
+    for (const r of histories) {
+      if (r.status !== "fulfilled") continue;
+      for (const pt of r.value) {
+        if (!pt.close || !pt.volume) continue;
+        dayMap.set(pt.ts, (dayMap.get(pt.ts) ?? 0) + pt.close * pt.volume);
       }
-      // Each date has sell/buy/net — take every 3rd starting at offset 2
-      const nets: number[] = [];
-      for (let i = 2; i < vals.length; i += 3) nets.push(vals[i]);
-      return nets.slice(0, dates.length);
     }
 
-    const foreign     = extractNetBuy("외국인");
-    const institution = extractNetBuy("기관계");
-    const individual  = extractNetBuy("개인");
+    const points: MarketVolumePoint[] = [...dayMap.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .slice(-5)
+      .map(([ts, krw]) => {
+        const d  = new Date(ts * 1000);
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return {
+          date:  `${mm}.${dd}`,
+          value: Math.round(krw / 100_000_000), // 억원
+        };
+      });
 
-    if (!foreign.length) return null;
-
-    return dates.map((date, i) => ({
-      date,
-      foreign:     foreign[i]     ?? 0,
-      institution: institution[i] ?? 0,
-      individual:  individual[i]  ?? 0,
-    })).reverse();
+    return points;
   } catch {
-    return null;
+    return [];
   }
-}
-
-export async function getInvestorFlow(): Promise<InvestorFlow[]> {
-  // Real net-buy data from Naver Finance HTML scraping.
-  try {
-    const res = await fetch(
-      "https://finance.naver.com/sise/investorDealTrend.naver",
-      { headers: NAVER_HEADERS, signal: AbortSignal.timeout(8_000), cache: "no-store" },
-    );
-    if (!res.ok) throw new Error(`Naver HTTP ${res.status}`);
-    const buffer = await res.arrayBuffer();
-    const html   = new TextDecoder("euc-kr").decode(buffer);
-    if (html.includes("error_content")) throw new Error("Naver error page");
-    const parsed = parseNaverFlow(html);
-    if (parsed && parsed.length >= 3) return parsed;
-  } catch {
-    // fall through
-  }
-
-  // No real data available — caller renders empty state.
-  return [];
 }
 
 // ── Commodities & Bonds ───────────────────────────────────────────────────────
