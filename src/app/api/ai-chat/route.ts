@@ -40,12 +40,13 @@ export async function POST(req: NextRequest) {
           STOCK_ANALYSIS_SYSTEM_PROMPT,
           "",
           `# 분석 대상`,
-          `${stockName ?? stockSymbol} (${stockSymbol})`,
-          `오늘 날짜: ${todayKr}`,
+          `종목: ${stockName ?? stockSymbol} (${stockSymbol})`,
+          `오늘 날짜: ${todayKr} ← **반드시 이 날짜만 기준일로 사용**`,
           "",
-          snapshotContext || "_실시간 데이터를 가져오지 못했습니다 — 추측 대신 그 사실을 명시하세요._",
+          snapshotContext ||
+            "_실시간 데이터를 가져오지 못했습니다 — 추측·프리셋·과거 컨센서스로 채우지 말고 '데이터 미수신'을 명시하고 일반론 위주로 답변하세요._",
         ].join("\n")
-      : STOCK_ANALYSIS_SYSTEM_PROMPT;
+      : `${STOCK_ANALYSIS_SYSTEM_PROMPT}\n\n오늘 날짜: ${todayKr}`;
 
     const stream = anthropic.messages.stream({
       model: "claude-sonnet-4-6",

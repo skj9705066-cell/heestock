@@ -6,6 +6,7 @@ import {
   fetchYFKeyStats,
   fetchYFPriceHistory,
   fetchYFFinancials,
+  resolveKrYahooSymbol,
   type YFQuote,
   type YFKeyStats,
   type PricePoint,
@@ -103,8 +104,8 @@ function detectMarket(symbol: string, hint?: Market): Market {
   return "US";
 }
 
-function yfSymbol(symbol: string, market: Market): string {
-  if (market === "KR" && /^\d{6}$/.test(symbol)) return `${symbol}.KS`;
+async function yfSymbol(symbol: string, market: Market): Promise<string> {
+  if (market === "KR" && /^\d{6}$/.test(symbol)) return resolveKrYahooSymbol(symbol);
   return symbol;
 }
 
@@ -380,8 +381,8 @@ export async function buildStockSnapshot(
   const asOfDateKr = fmtDateKr(now);
   const errors: string[] = [];
 
-  const yfSym = yfSymbol(symbol, market);
   const stockCode = symbol.replace(/\.(KS|KQ)$/, "");
+  const yfSym = await yfSymbol(stockCode, market);
 
   // Run all fetches in parallel.
   const [qRes, ksRes, histRes, finRes] = await Promise.allSettled([

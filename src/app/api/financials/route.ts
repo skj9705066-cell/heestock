@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import type { FinancialData, FinancialReport } from "@/types/financial";
-import { fetchYFFinancials, type YFIncomeRow, type YFBalanceRow, type YFCashFlowRow } from "@/lib/yahoo-finance";
+import { fetchYFFinancials, resolveKrYahooSymbol, type YFIncomeRow, type YFBalanceRow, type YFCashFlowRow } from "@/lib/yahoo-finance";
 import { fetchDartKrFinancials } from "@/lib/dart";
 
 export const runtime = "nodejs";
@@ -507,8 +507,8 @@ function quarterLabel(dateStr: string): string {
 }
 
 async function buildFromYF(symbol: string, name: string): Promise<FinancialData> {
-  // Resolve .KS / .KQ suffix
-  const yfSym = symbol.includes(".") ? symbol : `${symbol}.KS`;
+  // Resolve .KS / .KQ suffix (auto-detects KOSPI vs KOSDAQ)
+  const yfSym = symbol.includes(".") ? symbol : await resolveKrYahooSymbol(symbol);
   const fin   = await fetchYFFinancials(yfSym);
   if (!fin) throw new Error("YF no data");
 

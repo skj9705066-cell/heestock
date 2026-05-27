@@ -1,12 +1,19 @@
 // DART OpenAPI — Korean financial statements
 // Docs: https://opendart.fss.or.kr/api/guide/opr/OprMndt003.do
 
+import { inflateRawSync } from "node:zlib";
+
 const DART_BASE = "https://opendart.fss.or.kr/api";
 
 // ── In-memory caches ──────────────────────────────────────────────────────────
 const _corpCache = new Map<string, string>();                         // stockCode → dartCode
 const _stmtCache = new Map<string, { data: DartItem[]; ts: number }>(); // 24 h TTL
 const STMT_TTL = 24 * 60 * 60_000;
+
+// Full DART corp list (downloaded on demand from corpCode.xml)
+let _corpListCache: { list: DartCorp[]; ts: number } | null = null;
+const CORP_LIST_TTL = 24 * 60 * 60_000;
+let _corpListPromise: Promise<DartCorp[]> | null = null;
 
 function dartKey(): string { return process.env.DART_API_KEY ?? ""; }
 
@@ -398,4 +405,127 @@ export async function fetchDartKrFinancials(stockCode: string): Promise<DartFina
   }
 
   return { annual, quarterly };
+}
+
+// ── DART corp list (corpCode.xml) ─────────────────────────────────────────────
+// Downloads the master list of every company registered with DART. Used to
+// search Korean smallcaps (KOSDAQ etc.) that Yahoo Finance search doesn't index
+// for Hangul queries.
+
+export interface DartCorp {
+  corpCode:  string; // 8-digit DART code
+  corpName:  string; // Korean company name
+  stockCode: string; // 6-digit listed stock code (empty for unlisted)
+}
+
+// Minimal ZIP extractor — DART returns a ZIP containing exactly one file
+// (CORPCODE.xml) using DEFLATE. We parse only the first local file header.
+function unzipFirst(buffer: Buffer): Buffer {
+  if (buffer.length < 30 || buffer.readUInt32LE(0) !== 0x04034b50) {
+    throw new Error("Invalid ZIP (no local file header)");
+  }
+  const compression    = buffer.readUInt16LE(8);
+  const compressedSize = buffer.readUInt32LE(18);
+  const nameLen        = buffer.readUInt16LE(26);
+  const extraLen       = buffer.readUInt16LE(28);
+  const dataStart      = 30 + nameLen + extraLen;
+  const dataEnd        = dataStart + compressedSize;
+  const compressed     = buffer.subarray(dataStart, dataEnd);
+  if (compression === 0) return compressed;
+  if (compression === 8) return inflateRawSync(compressed);
+  throw new Error(`Unsupported ZIP compression: ${compression}`);
+}
+
+async function downloadCorpList(): Promise<DartCorp[]> {
+  const key = dartKey();
+  if (!key) throw new Error("DART API key missing");
+
+  const url = `${DART_BASE}/corpCode.xml?crtfc_key=${encodeURIComponent(key)}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000), cache: "no-store" });
+  if (!res.ok) throw new Error(`DART corpCode HTTP ${res.status}`);
+  const arrayBuf = await res.arrayBuffer();
+  const zipBuf = Buffer.from(arrayBuf);
+  const xml = unzipFirst(zipBuf).toString("utf-8");
+
+  // The XML is ~10MB with ~3700 entries. Regex parse is fastest in Node without xml deps.
+  const corps: DartCorp[] = [];
+  const re = /<list>\s*<corp_code>([^<]+)<\/corp_code>\s*<corp_name>([^<]+)<\/corp_name>\s*<corp_eng_name>[^<]*<\/corp_eng_name>\s*<stock_code>([^<]*)<\/stock_code>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) {
+    const stockCode = m[3].trim();
+    if (!stockCode) continue; // Skip unlisted corporations
+    corps.push({
+      corpCode:  m[1].trim(),
+      corpName:  m[2].trim(),
+      stockCode,
+    });
+  }
+  return corps;
+}
+
+export async function fetchDartCorpList(): Promise<DartCorp[]> {
+  const now = Date.now();
+  if (_corpListCache && now - _corpListCache.ts < CORP_LIST_TTL) {
+    return _corpListCache.list;
+  }
+  // De-dupe concurrent calls during cold start
+  if (_corpListPromise) return _corpListPromise;
+  _corpListPromise = downloadCorpList()
+    .then(list => {
+      _corpListCache = { list, ts: Date.now() };
+      // Warm corpCode cache too (so getCorpCode skips the disclosure-list lookup)
+      for (const c of list) {
+        if (!_corpCache.has(c.stockCode)) _corpCache.set(c.stockCode, c.corpCode);
+      }
+      return list;
+    })
+    .finally(() => { _corpListPromise = null; });
+  return _corpListPromise;
+}
+
+export interface DartCorpSearchHit {
+  stockCode: string;
+  corpName:  string;
+  corpCode:  string;
+}
+
+// Search the DART corp list by Korean name or 6-digit stock code.
+// Returns the top `limit` hits, ordered: exact-prefix > contains.
+export async function searchDartCorps(query: string, limit = 10): Promise<DartCorpSearchHit[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  let list: DartCorp[];
+  try {
+    list = await fetchDartCorpList();
+  } catch {
+    return [];
+  }
+
+  const lq = q.toLowerCase();
+  const isNumeric = /^\d{1,6}$/.test(q);
+
+  // Score: 3=exact name/code, 2=prefix name, 1=contains
+  const scored: { hit: DartCorpSearchHit; score: number }[] = [];
+  for (const c of list) {
+    let score = 0;
+    if (isNumeric) {
+      if (c.stockCode === q.padStart(6, "0")) score = 3;
+      else if (c.stockCode.startsWith(q))     score = 2;
+      else if (c.stockCode.includes(q))       score = 1;
+    } else {
+      const name = c.corpName.toLowerCase();
+      if (name === lq)              score = 3;
+      else if (name.startsWith(lq)) score = 2;
+      else if (name.includes(lq))   score = 1;
+    }
+    if (score > 0) {
+      scored.push({
+        hit: { stockCode: c.stockCode, corpName: c.corpName, corpCode: c.corpCode },
+        score,
+      });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score || a.hit.corpName.localeCompare(b.hit.corpName));
+  return scored.slice(0, limit).map(s => s.hit);
 }

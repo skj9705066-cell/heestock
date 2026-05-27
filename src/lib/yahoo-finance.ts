@@ -235,6 +235,32 @@ export async function fetchYFQuotes(symbols: string[]): Promise<YFQuote[]> {
   return results;
 }
 
+// ── Korean .KS / .KQ suffix resolver ──────────────────────────────────────────
+// Yahoo Finance uses .KS for KOSPI and .KQ for KOSDAQ. We try .KS first, then
+// fall back to .KQ. Resolved suffix is cached per stock code.
+const _krSuffixCache = new Map<string, ".KS" | ".KQ">();
+
+export async function resolveKrYahooSymbol(stockCode: string): Promise<string> {
+  if (!/^\d{6}$/.test(stockCode)) return stockCode;
+  const cached = _krSuffixCache.get(stockCode);
+  if (cached) return `${stockCode}${cached}`;
+
+  // Try .KS first (KOSPI is the bigger market)
+  const ks = await fetchV8Chart(`${stockCode}.KS`);
+  if (ks && ks.regularMarketPrice && ks.regularMarketPrice > 0) {
+    _krSuffixCache.set(stockCode, ".KS");
+    return `${stockCode}.KS`;
+  }
+  // Fall back to .KQ (KOSDAQ — small/mid caps like 파두 440110)
+  const kq = await fetchV8Chart(`${stockCode}.KQ`);
+  if (kq && kq.regularMarketPrice && kq.regularMarketPrice > 0) {
+    _krSuffixCache.set(stockCode, ".KQ");
+    return `${stockCode}.KQ`;
+  }
+  // No data either way — default to .KS so downstream errors surface cleanly
+  return `${stockCode}.KS`;
+}
+
 // ── Price history (for RS calculation) ───────────────────────────────────────
 export interface PricePoint {
   ts: number;    // Unix timestamp in seconds
