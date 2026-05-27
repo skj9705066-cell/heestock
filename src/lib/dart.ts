@@ -494,21 +494,47 @@ async function downloadCorpList(): Promise<DartCorp[]> {
   return corps;
 }
 
+// Try to load the prebuilt corp-list snapshot first. The build step (see
+// scripts/prebuild-dart-corps.mjs) writes src/data/dart-corps.json with the
+// full ~3,700-entry listed-corp universe so the runtime API doesn't have to
+// pay the 30–60 s cold-start fetch cost from Vercel.
+async function loadPrebuiltCorpList(): Promise<DartCorp[] | null> {
+  try {
+    const mod = await import("@/data/dart-corps.json");
+    const list = (mod.default ?? mod) as DartCorp[];
+    if (Array.isArray(list) && list.length > 0) return list;
+  } catch {
+    // file missing / empty — fall through to runtime download
+  }
+  return null;
+}
+
 export async function fetchDartCorpList(): Promise<DartCorp[]> {
   const now = Date.now();
   if (_corpListCache && now - _corpListCache.ts < CORP_LIST_TTL) {
     return _corpListCache.list;
   }
-  // De-dupe concurrent calls during cold start
+
+  // Fast path: prebuilt snapshot shipped with the bundle.
+  const prebuilt = await loadPrebuiltCorpList();
+  if (prebuilt) {
+    _corpListCache = { list: prebuilt, ts: now };
+    for (const c of prebuilt) {
+      if (!_corpCache.has(c.stockCode)) _corpCache.set(c.stockCode, c.corpCode);
+    }
+    console.info(`[dart] corp list loaded from prebuilt snapshot: ${prebuilt.length} corps`);
+    return prebuilt;
+  }
+
+  // Slow path: download at runtime (de-duped across concurrent callers).
   if (_corpListPromise) return _corpListPromise;
   _corpListPromise = downloadCorpList()
     .then(list => {
       _corpListCache = { list, ts: Date.now() };
-      // Warm corpCode cache too (so getCorpCode skips the disclosure-list lookup)
       for (const c of list) {
         if (!_corpCache.has(c.stockCode)) _corpCache.set(c.stockCode, c.corpCode);
       }
-      console.info(`[dart] corp list ready: ${list.length} listed corps`);
+      console.info(`[dart] corp list downloaded at runtime: ${list.length} corps`);
       return list;
     })
     .catch(err => {
