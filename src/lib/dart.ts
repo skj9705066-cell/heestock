@@ -462,11 +462,16 @@ async function downloadCorpList(): Promise<DartCorp[]> {
   if (!key) throw new Error("DART API key missing");
 
   const url = `${DART_BASE}/corpCode.xml?crtfc_key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(30_000), cache: "no-store" });
+  // Give DART up to 45 s on cold start — the file is 3.5 MB compressed and
+  // DART can be slow to respond from Vercel's egress regions.
+  const t0 = Date.now();
+  const res = await fetch(url, { signal: AbortSignal.timeout(45_000), cache: "no-store" });
   if (!res.ok) throw new Error(`DART corpCode HTTP ${res.status}`);
   const arrayBuf = await res.arrayBuffer();
   const zipBuf = Buffer.from(arrayBuf);
+  console.info(`[dart] corpCode ZIP downloaded ${zipBuf.length} B in ${Date.now() - t0} ms`);
   const xml = unzipFirst(zipBuf).toString("utf-8");
+  console.info(`[dart] corpCode XML extracted ${xml.length} B`);
 
   // XML is ~28 MB with ~118 k <list> blocks. Block-based parsing is robust to
   // field order/whitespace and the fact that DART encodes "no stock code" as
@@ -503,7 +508,12 @@ export async function fetchDartCorpList(): Promise<DartCorp[]> {
       for (const c of list) {
         if (!_corpCache.has(c.stockCode)) _corpCache.set(c.stockCode, c.corpCode);
       }
+      console.info(`[dart] corp list ready: ${list.length} listed corps`);
       return list;
+    })
+    .catch(err => {
+      console.error(`[dart] corp list fetch failed:`, (err as Error).message);
+      throw err;
     })
     .finally(() => { _corpListPromise = null; });
   return _corpListPromise;

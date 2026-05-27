@@ -2,9 +2,12 @@ import { NextRequest } from "next/server";
 import { searchYFSymbols } from "@/lib/yahoo-finance";
 import { searchDartCorps } from "@/lib/dart";
 
-export const runtime  = "nodejs";
-export const dynamic  = "force-dynamic";
+export const runtime    = "nodejs";
+export const dynamic    = "force-dynamic";
 export const revalidate = 0;
+// DART corpCode.xml is 3.5 MB compressed → 28 MB uncompressed; cold-start
+// download + parse can exceed the default 10 s Vercel function timeout.
+export const maxDuration = 60;
 
 // Curated sector labels for major Korean tickers — used to enrich both
 // YF/Dart search results with Korean sector text (YF returns English industries).
