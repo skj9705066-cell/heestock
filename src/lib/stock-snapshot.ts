@@ -13,6 +13,7 @@ import {
   type YFIncomeRow,
 } from "@/lib/yahoo-finance";
 import { fetchDartKrFinancials } from "@/lib/dart";
+import { fetchKisPrice, fetchKisInvestorFlow, type KisPrice, type KisInvestorDay } from "@/lib/kis";
 
 export type Market = "KR" | "US";
 
@@ -82,6 +83,22 @@ export interface SnapshotFinancials {
   quarterlyHistory?: SnapshotFinancialRow[];
 }
 
+// Per-stock investor flow (수급) — 외국인/기관/개인 net buy in 억원, sourced
+// from KIS Open API's inquire-investor endpoint. KR stocks only.
+export interface SnapshotInvestorDay {
+  date:        string; // YYYY-MM-DD
+  foreign:     number; // 억원 (positive = net buy)
+  institution: number;
+  individual:  number;
+}
+
+export interface SnapshotInvestorFlow {
+  source: "KIS";
+  days:   SnapshotInvestorDay[];
+  // Cumulative net buy across the window — handy summary for the AI prompt.
+  totals: { foreign: number; institution: number; individual: number };
+}
+
 export interface StockSnapshot {
   symbol: string;
   name: string;
@@ -92,6 +109,7 @@ export interface StockSnapshot {
   keyStats?: SnapshotKeyStats;
   priceHistory?: SnapshotPriceHistory;
   financials?: SnapshotFinancials;
+  investorFlow?: SnapshotInvestorFlow;
   errors: string[];
 }
 
@@ -223,6 +241,63 @@ function buildKeyStats(stats: YFKeyStats | null): SnapshotKeyStats | undefined {
     enterpriseToEbitda: stats.enterpriseToEbitda,
     trailingEps: stats.trailingEps,
   };
+}
+
+// ── KIS-based builders (KR primary source) ──────────────────────────────────
+
+function buildKrQuoteFromKis(k: KisPrice | null): SnapshotQuote | undefined {
+  if (!k || !k.price) return undefined;
+  const high = k.fiftyTwoWeekHigh, low = k.fiftyTwoWeekLow;
+  const pricePosition52w = (high && low && high > low)
+    ? pct(((k.price - low) / (high - low)) * 100)
+    : undefined;
+  return {
+    price:             k.price,
+    change:            Math.round(k.change * 100) / 100,
+    changePercent:     pct(k.changePercent),
+    volume:            k.volume,
+    dayHigh:           k.dayHigh,
+    dayLow:            k.dayLow,
+    previousClose:     k.previousClose,
+    fiftyTwoWeekHigh:  k.fiftyTwoWeekHigh,
+    fiftyTwoWeekLow:   k.fiftyTwoWeekLow,
+    pricePosition52w,
+    marketCap:         k.marketCap,
+    currency:          "KRW",
+  };
+}
+
+function buildKrKeyStatsFromKis(k: KisPrice | null): SnapshotKeyStats | undefined {
+  if (!k) return undefined;
+  // KIS provides PER / PBR / EPS / BPS directly. ROE = EPS / BPS × 100 when both present.
+  const roe = (k.eps !== undefined && k.bps !== undefined && k.bps > 0)
+    ? pct((k.eps / k.bps) * 100)
+    : undefined;
+  return {
+    trailingPE:  k.per,
+    priceToBook: k.pbr,
+    returnOnEquity: roe,
+    trailingEps: k.eps,
+  };
+}
+
+function buildInvestorFlow(days: KisInvestorDay[]): SnapshotInvestorFlow | undefined {
+  if (!days.length) return undefined;
+  const cleaned: SnapshotInvestorDay[] = days.map(d => ({
+    date:        d.date,
+    foreign:     d.foreign,
+    institution: d.institution,
+    individual:  d.individual,
+  }));
+  const totals = cleaned.reduce(
+    (acc, d) => ({
+      foreign:     acc.foreign     + d.foreign,
+      institution: acc.institution + d.institution,
+      individual:  acc.individual  + d.individual,
+    }),
+    { foreign: 0, institution: 0, individual: 0 },
+  );
+  return { source: "KIS", days: cleaned, totals };
 }
 
 // ── DART financials → snapshot rows ─────────────────────────────────────────
@@ -384,27 +459,57 @@ export async function buildStockSnapshot(
   const stockCode = symbol.replace(/\.(KS|KQ)$/, "");
   const yfSym = await yfSymbol(stockCode, market);
 
-  // Run all fetches in parallel.
-  const [qRes, ksRes, histRes, finRes] = await Promise.allSettled([
+  // For KR stocks: KIS is the primary source for quote + key stats + 수급.
+  // Yahoo is still used for the 1-year price history chart (KIS daily chart
+  // is paginated and slower). DART remains the source for financials.
+  const isKr = market === "KR";
+
+  const [qRes, ksRes, histRes, finRes, kisRes, kisInvRes] = await Promise.allSettled([
     fetchYFQuotes([yfSym]).then(arr => arr[0] ?? null),
     fetchYFKeyStats(yfSym),
     fetchYFPriceHistory(yfSym, "1y"),
-    market === "KR" ? buildKrFinancials(stockCode) : buildUsFinancials(yfSym),
+    isKr ? buildKrFinancials(stockCode) : buildUsFinancials(yfSym),
+    isKr ? fetchKisPrice(stockCode)         : Promise.resolve(null),
+    isKr ? fetchKisInvestorFlow(stockCode, 5) : Promise.resolve([]),
   ]);
 
-  const quote = qRes.status === "fulfilled" ? buildQuote(qRes.value, market) : undefined;
-  if (qRes.status === "rejected" || !quote) errors.push("실시간 시세 조회 실패");
+  // Quote: prefer KIS (authoritative for KR), fall back to Yahoo
+  const kisPrice = kisRes.status === "fulfilled" ? kisRes.value : null;
+  const yfQuote  = qRes.status   === "fulfilled" ? qRes.value   : null;
+  let quote: SnapshotQuote | undefined;
+  if (isKr && kisPrice) {
+    quote = buildKrQuoteFromKis(kisPrice);
+  } else {
+    quote = buildQuote(yfQuote, market);
+  }
+  if (!quote) errors.push("실시간 시세 조회 실패");
 
-  const keyStats = ksRes.status === "fulfilled" ? buildKeyStats(ksRes.value) : undefined;
-  if (ksRes.status === "rejected") errors.push("재무비율(PER/PBR/ROE) 조회 실패");
+  // Key stats: prefer KIS for KR (PER/PBR/EPS/BPS), Yahoo for US
+  const yfStats = ksRes.status === "fulfilled" ? ksRes.value : null;
+  let keyStats: SnapshotKeyStats | undefined;
+  if (isKr && kisPrice) {
+    const kis = buildKrKeyStatsFromKis(kisPrice);
+    const yf  = buildKeyStats(yfStats);
+    // Merge: KIS values take priority, but keep YF's forwardPE / PSR / EV/EBITDA if present
+    keyStats = { ...yf, ...kis };
+  } else {
+    keyStats = buildKeyStats(yfStats);
+  }
+  if (!keyStats) errors.push("재무비율(PER/PBR/ROE) 조회 실패");
 
   const priceHistory = histRes.status === "fulfilled" ? buildPriceHistory(histRes.value) : undefined;
-  if (histRes.status === "rejected" || !priceHistory) errors.push("1년 주가 추이 조회 실패");
+  if (!priceHistory) errors.push("1년 주가 추이 조회 실패");
 
   const financials = finRes.status === "fulfilled" ? finRes.value : undefined;
-  if (finRes.status === "rejected" || !financials) {
-    errors.push(market === "KR" ? "DART 재무제표 조회 실패" : "Yahoo 재무제표 조회 실패");
+  if (!financials) {
+    errors.push(isKr ? "DART 재무제표 조회 실패" : "Yahoo 재무제표 조회 실패");
   }
+
+  // Investor flow (KR only). Failure isn't fatal — the AI flow doesn't need it.
+  const investorFlow = isKr && kisInvRes.status === "fulfilled"
+    ? buildInvestorFlow(kisInvRes.value)
+    : undefined;
+  if (isKr && !investorFlow) errors.push("수급(외/기/개) 조회 실패");
 
   const snapshot: StockSnapshot = {
     symbol: stockCode,
@@ -416,6 +521,7 @@ export async function buildStockSnapshot(
     keyStats,
     priceHistory,
     financials,
+    investorFlow,
     errors,
   };
 
@@ -535,6 +641,22 @@ export function formatSnapshotForPrompt(snap: StockSnapshot): string {
       for (const row of f.annualHistory) {
         lines.push(`- ${row.period}: 매출 ${fmtNum(row.revenue)} / 영업이익 ${fmtNum(row.operatingIncome)} / 순이익 ${fmtNum(row.netIncome)}`);
       }
+    }
+    lines.push("");
+  }
+
+  // ── 수급 (Investor flow, KIS) ─────────────────────────────────────────────
+  if (snap.investorFlow && snap.investorFlow.days.length) {
+    const inv = snap.investorFlow;
+    const flowSign = (n: number) => `${n >= 0 ? "+" : ""}${n.toLocaleString("ko-KR")}억원`;
+    lines.push(`## 수급 (출처: ${inv.source}, 단위: 억원)`);
+    lines.push(`### 최근 ${inv.days.length}거래일 순매수 합계`);
+    lines.push(`- 외국인: ${flowSign(inv.totals.foreign)}`);
+    lines.push(`- 기관:   ${flowSign(inv.totals.institution)}`);
+    lines.push(`- 개인:   ${flowSign(inv.totals.individual)}`);
+    lines.push("### 일별 순매수");
+    for (const d of inv.days) {
+      lines.push(`- ${d.date}: 외 ${flowSign(d.foreign)} / 기 ${flowSign(d.institution)} / 개 ${flowSign(d.individual)}`);
     }
     lines.push("");
   }

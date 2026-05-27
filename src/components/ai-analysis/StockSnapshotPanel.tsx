@@ -230,7 +230,92 @@ export function StockSnapshotPanel({ symbol, name, market }: Props) {
           </div>
         </div>
       )}
+
+      {/* Investor flow (수급) — KR only, KIS data */}
+      {snap.investorFlow && snap.investorFlow.days.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              수급 (최근 {snap.investorFlow.days.length}거래일)
+            </span>
+            <Badge variant="blue" size="sm">{snap.investorFlow.source}</Badge>
+            <span className="text-[10px] text-slate-400">단위: 억원 · 순매수</span>
+          </div>
+
+          {/* Totals: 3 tiles */}
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <InvestorTotal label="외국인" value={snap.investorFlow.totals.foreign} accent="purple" />
+            <InvestorTotal label="기관"   value={snap.investorFlow.totals.institution} accent="amber" />
+            <InvestorTotal label="개인"   value={snap.investorFlow.totals.individual} accent="slate" />
+          </div>
+
+          {/* Daily table */}
+          <div className="bg-white dark:bg-dark-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-400">
+                  <th className="text-left px-2.5 py-1.5 font-medium">일자</th>
+                  <th className="text-right px-2.5 py-1.5 font-medium">외국인</th>
+                  <th className="text-right px-2.5 py-1.5 font-medium">기관</th>
+                  <th className="text-right px-2.5 py-1.5 font-medium">개인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...snap.investorFlow.days].reverse().map(d => (
+                  <tr key={d.date} className="border-t border-slate-100 dark:border-slate-700/50">
+                    <td className="px-2.5 py-1.5 text-slate-500 font-mono">{d.date.slice(5)}</td>
+                    <FlowCell value={d.foreign} />
+                    <FlowCell value={d.institution} />
+                    <FlowCell value={d.individual} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function InvestorTotal({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent: "purple" | "amber" | "slate";
+}) {
+  const up    = value >= 0;
+  const sign  = up ? "+" : "";
+  const accentClass = {
+    purple: "text-purple-500 dark:text-purple-400",
+    amber:  "text-amber-500  dark:text-amber-400",
+    slate:  "text-slate-500  dark:text-slate-400",
+  }[accent];
+  return (
+    <div className="bg-white dark:bg-dark-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5">
+      <div className={cn("text-[10px] uppercase tracking-wider mb-0.5", accentClass)}>{label}</div>
+      <div className={cn(
+        "text-sm font-bold font-mono",
+        up ? "text-rose-500" : "text-blue-500",
+      )}>
+        {sign}{value.toLocaleString("ko-KR")}
+      </div>
+    </div>
+  );
+}
+
+function FlowCell({ value }: { value: number }) {
+  const up = value >= 0;
+  return (
+    <td className={cn(
+      "px-2.5 py-1.5 text-right font-mono",
+      up ? "text-rose-500" : "text-blue-500",
+    )}>
+      {up ? "+" : ""}{value.toLocaleString("ko-KR")}
+    </td>
   );
 }
 
