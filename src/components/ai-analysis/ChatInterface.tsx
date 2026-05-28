@@ -68,7 +68,7 @@ export function ChatInterface({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col md:h-full">
       {/* Chat Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2">
@@ -105,7 +105,7 @@ export function ChatInterface({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div className="overflow-y-auto md:flex-1 p-5 space-y-4 min-h-[200px]">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-12 space-y-4">
             <div className="w-14 h-14 bg-blue-600/10 rounded-2xl flex items-center justify-center">

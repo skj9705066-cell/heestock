@@ -10,6 +10,7 @@ import {
 import { RefreshCw, BarChart2, Activity, Clock, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { useRefresh } from "@/context/RefreshContext";
 import type { OHLCVPoint } from "@/app/api/chart-data/route";
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -225,6 +226,7 @@ export function MarketIndexChart() {
   const [noData,      setNoData]      = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { refreshKey } = useRefresh();
 
   const currentIndex  = INDICES[idxTab];
   const currentPeriod = PERIOD_OPTIONS[periodIdx];
@@ -248,6 +250,11 @@ export function MarketIndexChart() {
   }, [currentIndex.symbol, currentPeriod.interval, currentPeriod.range]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    if (refreshKey > 0) fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);

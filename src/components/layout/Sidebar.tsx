@@ -17,9 +17,11 @@ import {
   Sparkles,
   Menu,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
 import { useTheme } from "@/context/ThemeContext";
+import { useRefresh } from "@/context/RefreshContext";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -70,6 +72,7 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
+  const { triggerRefresh, isRefreshing } = useRefresh();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -90,7 +93,14 @@ export function Sidebar() {
           </div>
           <span className="font-bold text-slate-900 dark:text-white text-sm">희스탁</span>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={triggerRefresh}
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            aria-label="새로고침"
+          >
+            <RefreshCw className={cn("w-4 h-4 text-slate-500", isRefreshing && "animate-spin")} />
+          </button>
           <button
             onClick={toggleTheme}
             className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -208,6 +218,14 @@ export function Sidebar() {
 
         {/* Footer */}
         <div className="px-2 py-4 border-t border-slate-200 dark:border-slate-800 space-y-1">
+          <button
+            onClick={triggerRefresh}
+            className={cn("sidebar-item w-full", collapsed && "justify-center px-2")}
+            title={collapsed ? "새로고침" : undefined}
+          >
+            <RefreshCw className={cn("w-5 h-5 text-slate-500 flex-shrink-0", isRefreshing && "animate-spin")} />
+            {!collapsed && <span className="text-sm">새로고침</span>}
+          </button>
           <button
             onClick={toggleTheme}
             className={cn(

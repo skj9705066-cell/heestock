@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { RefreshProvider } from "@/context/RefreshContext";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PWARegister } from "@/components/PWARegister";
 import { Toaster } from "react-hot-toast";
@@ -50,23 +51,25 @@ export default function RootLayout({
     <html lang="ko" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans`}>
         <ThemeProvider>
-          <div className="flex flex-col h-screen overflow-hidden bg-slate-50 dark:bg-dark-950">
-            {/* Spacer for the fixed mobile top bar rendered by Sidebar */}
-            <div className="h-14 shrink-0 md:hidden" aria-hidden="true" />
-            <div className="flex flex-1 min-h-0 overflow-hidden">
-              <Sidebar />
-              <main className="flex-1 overflow-y-auto">
-                {children}
-              </main>
+          <RefreshProvider>
+            <div className="flex flex-col h-screen overflow-hidden bg-slate-50 dark:bg-dark-950">
+              {/* Spacer for the fixed mobile top bar rendered by Sidebar */}
+              <div className="h-14 shrink-0 md:hidden" aria-hidden="true" />
+              <div className="flex flex-1 min-h-0 overflow-hidden">
+                <Sidebar />
+                <main className="flex-1 overflow-y-auto">
+                  {children}
+                </main>
+              </div>
             </div>
-          </div>
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              className: "!bg-slate-800 !text-slate-100 !border !border-slate-700",
-              duration: 3000,
-            }}
-          />
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                className: "!bg-slate-800 !text-slate-100 !border !border-slate-700",
+                duration: 3000,
+              }}
+            />
+          </RefreshProvider>
         </ThemeProvider>
         <PWARegister />
       </body>

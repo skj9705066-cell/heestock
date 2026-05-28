@@ -67,7 +67,7 @@ export default function AIAnalysisPage() {
   };
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex md:h-full md:overflow-hidden">
       {/* History Sidebar */}
       <div
         className={`${
@@ -88,7 +88,7 @@ export default function AIAnalysisPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col md:overflow-hidden">
         {/* Top bar */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-dark-900">
           <div className="flex items-center gap-3 mb-3">
@@ -128,9 +128,8 @@ export default function AIAnalysisPage() {
           />
         )}
 
-        {/* Chat Area — flex-1 with min-h-0 ensures the chat keeps its share of
-            the column when the snapshot panel above it grows. */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        {/* Chat Area */}
+        <div className="md:flex-1 md:min-h-0 md:overflow-hidden">
           <ChatInterface
             messages={messages}
             isLoading={isLoading}
