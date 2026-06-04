@@ -4,6 +4,7 @@ import { InvestorTrend }    from "@/components/dashboard/InvestorTrend";
 import { TopStocks }        from "@/components/dashboard/TopStocks";
 import { SectorHeatmap }    from "@/components/dashboard/SectorHeatmap";
 import { MarketIndexChart } from "@/components/dashboard/MarketIndexChart";
+import { WatchlistSection } from "@/components/watchlist/WatchlistSection";
 import {
   getMarketIndices,
   getTopStocks,
@@ -48,6 +49,9 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* 관심종목 */}
+      <WatchlistSection />
 
       {/* Market Index Cards */}
       <section>

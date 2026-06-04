@@ -258,3 +258,82 @@ export async function fetchKisInvestorFlow(
     return [];
   }
 }
+
+// ── Daily candle (FHKST03010100) — OHLCV history for support level analysis ─
+
+export interface KisDailyCandle {
+  date:   string; // "YYYY-MM-DD"
+  open:   number;
+  high:   number;
+  low:    number;
+  close:  number;
+  volume: number;
+}
+
+interface InquireDailyChartResp {
+  rt_cd:   string;
+  msg1?:   string;
+  output1?: unknown;
+  output2?: Array<{
+    stck_bsop_date: string; // YYYYMMDD
+    stck_oprc:      string; // 시가
+    stck_hgpr:      string; // 고가
+    stck_lwpr:      string; // 저가
+    stck_clpr:      string; // 종가
+    acml_vol:       string; // 누적 거래량
+    prdy_vrss_sign: string;
+  }>;
+}
+
+export async function fetchKisDailyCandles(
+  stockCode: string,
+  days = 130,
+): Promise<KisDailyCandle[]> {
+  try {
+    const code = stockCode.replace(/\.(KS|KQ)$/, "");
+    const end   = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - Math.round(days * 1.8)); // extra to account for holidays
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+
+    const json = await callKis<InquireDailyChartResp>(
+      "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+      {
+        FID_COND_MRKT_DIV_CODE: "J",
+        FID_INPUT_ISCD:         code,
+        FID_INPUT_DATE_1:       fmt(start),
+        FID_INPUT_DATE_2:       fmt(end),
+        FID_PERIOD_DIV_CODE:    "D",
+        FID_ORG_ADJ_PRC:        "0",
+      },
+      { trId: "FHKST03010100" },
+    );
+
+    if (json.rt_cd !== "0" || !Array.isArray(json.output2)) {
+      console.warn(`[kis] daily-candle ${code}: ${json.msg1 ?? "no data"}`);
+      return [];
+    }
+
+    // output2 is newest-first → reverse
+    return json.output2
+      .filter(r => r.stck_clpr && r.stck_clpr !== "0")
+      .map((r): KisDailyCandle => {
+        const d = r.stck_bsop_date;
+        return {
+          date:   `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`,
+          open:   num(r.stck_oprc)  ?? 0,
+          high:   num(r.stck_hgpr)  ?? 0,
+          low:    num(r.stck_lwpr)  ?? 0,
+          close:  num(r.stck_clpr)  ?? 0,
+          volume: num(r.acml_vol)   ?? 0,
+        };
+      })
+      .filter(c => c.close > 0)
+      .reverse()
+      .slice(-days);
+  } catch (err) {
+    console.warn(`[kis] daily-candle failed for ${stockCode}:`, (err as Error).message);
+    return [];
+  }
+}
