@@ -162,7 +162,11 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
     const rawChange  = num(o.prdy_vrss) ?? 0;
     const change     = (sign === 4 || sign === 5) ? -Math.abs(rawChange) : Math.abs(rawChange);
     const rawPct     = num(o.prdy_ctrt) ?? 0;
-    const changePct  = (sign === 4 || sign === 5) ? -Math.abs(rawPct) : Math.abs(rawPct);
+    // Recalculate from actual price delta; prdy_ctrt can return "0.00" for
+    // mid/small-cap KOSDAQ stocks (e.g. 파두 440110) due to KIS data inconsistency.
+    const changePct  = prevClose > 0
+      ? Math.round((change / prevClose) * 10000) / 100
+      : (sign === 4 || sign === 5 ? -Math.abs(rawPct) : Math.abs(rawPct));
     const htsAvls    = num(o.hts_avls); // 단위: 억원
     return {
       stockCode:        code,
