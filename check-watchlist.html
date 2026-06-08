@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>관심종목 확인</title>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    pre { background: #f4f4f4; padding: 15px; border-radius: 5px; }
+    button { padding: 10px 20px; margin: 10px 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>관심종목 localStorage 확인</h1>
+  <button onclick="checkWatchlist()">관심종목 확인</button>
+  <button onclick="clearWatchlist()">관심종목 전체 삭제</button>
+  <button onclick="addPadu()">파두 추가 (KR)</button>
+  <button onclick="addSamsung()">삼성전자 추가 (KR)</button>
+
+  <div id="output"></div>
+
+  <script>
+    function checkWatchlist() {
+      const data = localStorage.getItem('heestock_watchlist');
+      const output = document.getElementById('output');
+
+      if (!data) {
+        output.innerHTML = '<h2>관심종목이 없습니다</h2>';
+        return;
+      }
+
+      try {
+        const list = JSON.parse(data);
+        output.innerHTML = `
+          <h2>관심종목 (${list.length}개)</h2>
+          <pre>${JSON.stringify(list, null, 2)}</pre>
+        `;
+      } catch (e) {
+        output.innerHTML = `<h2>에러: ${e.message}</h2><pre>${data}</pre>`;
+      }
+    }
+
+    function clearWatchlist() {
+      if (confirm('관심종목을 전체 삭제하시겠습니까?')) {
+        localStorage.removeItem('heestock_watchlist');
+        alert('삭제 완료');
+        checkWatchlist();
+      }
+    }
+
+    function addPadu() {
+      const list = JSON.parse(localStorage.getItem('heestock_watchlist') || '[]');
+      if (!list.some(x => x.symbol === '440110')) {
+        list.unshift({
+          symbol: '440110',
+          name: '파두',
+          market: 'KR',
+          sector: '전기전자',
+          addedAt: Date.now()
+        });
+        localStorage.setItem('heestock_watchlist', JSON.stringify(list));
+        alert('파두 추가 완료');
+        checkWatchlist();
+      } else {
+        alert('이미 추가되어 있습니다');
+      }
+    }
+
+    function addSamsung() {
+      const list = JSON.parse(localStorage.getItem('heestock_watchlist') || '[]');
+      if (!list.some(x => x.symbol === '005930')) {
+        list.unshift({
+          symbol: '005930',
+          name: '삼성전자',
+          market: 'KR',
+          sector: '전기전자',
+          addedAt: Date.now()
+        });
+        localStorage.setItem('heestock_watchlist', JSON.stringify(list));
+        alert('삼성전자 추가 완료');
+        checkWatchlist();
+      } else {
+        alert('이미 추가되어 있습니다');
+      }
+    }
+
+    // 페이지 로드 시 자동 확인
+    checkWatchlist();
+  </script>
+</body>
+</html>

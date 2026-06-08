@@ -47,11 +47,15 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
 
     async function load() {
       setLoading(true);
+      console.log(`[WatchlistCard] Loading ${item.symbol} (${item.name}) - market: ${item.market}`);
       try {
         // 브라우저 캐시 강제 무효화: timestamp 쿼리 파라미터 추가
         const ts = Date.now();
+        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&_t=${ts}`;
+        console.log(`[WatchlistCard] Fetching: ${url}`);
+
         const [snapRes, candleRes] = await Promise.allSettled([
-          fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&_t=${ts}`, {
+          fetch(url, {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
           }),
@@ -62,14 +66,19 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
 
         if (cancelled) return;
 
+        console.log(`[WatchlistCard] ${item.symbol} snapshot response:`, snapRes.status, snapRes.status === "fulfilled" ? snapRes.value.status : "N/A");
+
         if (snapRes.status === "fulfilled" && snapRes.value.ok) {
           const data = await snapRes.value.json();
+          console.log(`[WatchlistCard] ${item.symbol} data.quote:`, data.quote);
           setQuote({
             price:         data.quote?.price         ?? 0,
             changePercent: data.quote?.changePercent ?? 0,
             change:        data.quote?.change        ?? 0,
             currency:      data.quote?.currency      ?? (item.market === "KR" ? "KRW" : "USD"),
           });
+        } else {
+          console.error(`[WatchlistCard] ${item.symbol} fetch FAILED:`, snapRes.status === "fulfilled" ? await snapRes.value.text() : snapRes.reason);
         }
 
         if (candleRes.status === "fulfilled" && candleRes.value.ok) {
