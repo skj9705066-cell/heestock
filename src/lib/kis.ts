@@ -146,15 +146,36 @@ interface InquirePriceResp {
 export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null> {
   try {
     const code = stockCode.replace(/\.(KS|KQ)$/, "");
-    console.log(`[kis] fetchKisPrice called for: ${stockCode} → cleaned: ${code}`);
+    const params = { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code };
+
+    console.log(`[kis] fetchKisPrice START`);
+    console.log(`[kis]   - Input: ${stockCode} → cleaned: ${code}`);
+    console.log(`[kis]   - Params:`, JSON.stringify(params));
+    console.log(`[kis]   - TR: FHKST01010100`);
 
     const json = await callKis<InquirePriceResp>(
       "/uapi/domestic-stock/v1/quotations/inquire-price",
-      { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code },
+      params,
       { trId: "FHKST01010100" },
     );
 
-    console.log(`[kis] ${code} response - rt_cd: ${json.rt_cd}, msg1: ${json.msg1}, has_output: ${!!json.output}`);
+    console.log(`[kis] ${code} RAW RESPONSE:`);
+    console.log(`[kis]   - rt_cd: ${json.rt_cd}`);
+    console.log(`[kis]   - msg1: ${json.msg1 ?? "N/A"}`);
+    console.log(`[kis]   - has_output: ${!!json.output}`);
+
+    if (json.output) {
+      const o = json.output;
+      console.log(`[kis] ${code} OUTPUT:`, JSON.stringify({
+        stck_prpr: o.stck_prpr,
+        stck_sdpr: o.stck_sdpr,
+        prdy_vrss_sign: o.prdy_vrss_sign,
+        prdy_vrss: o.prdy_vrss,
+        prdy_ctrt: o.prdy_ctrt,
+      }));
+    } else {
+      console.error(`[kis] ${code} NO OUTPUT - Full response:`, JSON.stringify(json));
+    }
 
     if (json.rt_cd !== "0" || !json.output) {
       console.warn(`[kis] inquire-price ${code} FAILED: rt_cd=${json.rt_cd}, msg1=${json.msg1}`);
