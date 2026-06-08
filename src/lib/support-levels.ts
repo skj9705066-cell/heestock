@@ -22,10 +22,12 @@ export interface SupportLevel {
 
 export interface BounceSignal {
   detected:            boolean;
+  strength:            "강" | "중" | null;
   nearestSupport:      SupportLevel | null;
   distancePercent:     number;
   todayChangePercent:  number;
   volumeRatio:         number;
+  reason:              string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -182,35 +184,86 @@ export function detectBounce(
   currentPrice:  number,
   supportLevels: SupportLevel[],
 ): BounceSignal {
-  const empty: BounceSignal = { detected: false, nearestSupport: null, distancePercent: 0, todayChangePercent: 0, volumeRatio: 0 };
-  if (data.length < 6 || !currentPrice) return empty;
+  const empty: BounceSignal = {
+    detected: false,
+    strength: null,
+    nearestSupport: null,
+    distancePercent: 0,
+    todayChangePercent: 0,
+    volumeRatio: 0,
+    reason: "",
+  };
+  if (data.length < 20 || !currentPrice) return empty;
 
-  const strongLevels = supportLevels.filter(s => s.score >= 3);
-  if (!strongLevels.length) return empty;
+  // (1) 과거 저점(지지선) 식별: score >= 2인 지지선 중 현재가 아래 것들
+  const validSupports = supportLevels.filter(s => s.score >= 2 && s.price < currentPrice);
+  if (!validSupports.length) return empty;
 
-  const last    = data[data.length - 1];
-  const prev    = data[data.length - 2];
-  const prev2   = data[data.length - 3];
-
-  const todayChange   = (currentPrice - last.close)  / (last.close  || 1);
-  const last5vol      = data.slice(-5).reduce((s, d) => s + d.volume, 0) / 5;
-  const volumeRatio   = last5vol > 0 ? last.volume / last5vol : 0;
-  const wasFalling    = prev.close < prev2.close;
-
-  // Find nearest strong support
-  const nearestSupport = strongLevels.reduce((best, lvl) => {
+  // 가장 가까운 지지선 찾기
+  const nearestSupport = validSupports.reduce((best, lvl) => {
     const d1 = Math.abs(lvl.price - currentPrice);
     const d2 = best ? Math.abs(best.price - currentPrice) : Infinity;
     return d1 < d2 ? lvl : best;
   }, null as SupportLevel | null);
 
-  const distancePercent = nearestSupport
-    ? Math.abs(nearestSupport.price - currentPrice) / nearestSupport.price * 100
-    : 100;
+  if (!nearestSupport) return empty;
 
-  const detected = distancePercent <= 2 && wasFalling && todayChange >= 0.015 && volumeRatio >= 1.2;
+  // (2) 현재가가 지지선 ±3% 이내로 근접
+  const distancePercent = Math.abs(nearestSupport.price - currentPrice) / nearestSupport.price * 100;
+  if (distancePercent > 3) return empty;
 
-  return { detected, nearestSupport, distancePercent, todayChangePercent: todayChange * 100, volumeRatio };
+  const last    = data[data.length - 1];
+  const prev    = data[data.length - 2];
+  const prev2   = data[data.length - 3];
+
+  // (3) 직전 저점 대비 반등 시작: 당일 양봉 또는 종가 상승
+  const todayChange = (currentPrice - last.close) / (last.close || 1);
+  const isRising = todayChange >= 0 || last.close > last.open; // 양봉 또는 상승
+  if (!isRising) return empty;
+
+  // 최근 저점보다 위에서 형성됐는지 확인 (최근 5일 최저가)
+  const recentLow = Math.min(...data.slice(-5).map(d => d.low));
+  if (currentPrice <= recentLow) return empty;
+
+  // (4) 거래량 동반: 최근 20일 평균 대비 증가
+  const last20 = data.slice(-20);
+  const avgVol = last20.reduce((s, d) => s + d.volume, 0) / (last20.length || 1);
+  const volumeRatio = avgVol > 0 ? last.volume / avgVol : 0;
+  const volumeOk = volumeRatio >= 1.0;
+
+  if (!volumeOk) return empty;
+
+  // (5) 강도 판정: 60/120일선 지지 + 거래량 1.5배 이상 = 강
+  const ma60 = calcMA(data, 60);
+  const ma120 = calcMA(data, 120);
+  const hasMaSupport = (ma60 && Math.abs(ma60 - nearestSupport.price) / nearestSupport.price <= 0.03) ||
+                       (ma120 && Math.abs(ma120 - nearestSupport.price) / nearestSupport.price <= 0.03);
+  const strongVolume = volumeRatio >= 1.5;
+
+  const strength: "강" | "중" = (hasMaSupport && strongVolume) ? "강" : "중";
+
+  // 근거 문구 생성
+  const reasons: string[] = [];
+  if (nearestSupport.reasons.historicalLows) {
+    reasons.push(`과거 ${nearestSupport.reasons.historicalLows.count}회 반등`);
+  }
+  if (nearestSupport.reasons.movingAverage) {
+    reasons.push(`${nearestSupport.reasons.movingAverage.period}일선 지지`);
+  }
+  if (strongVolume) {
+    reasons.push("거래량 증가");
+  }
+  const reason = reasons.join(" + ") || "지지선 반등";
+
+  return {
+    detected: true,
+    strength,
+    nearestSupport,
+    distancePercent,
+    todayChangePercent: todayChange * 100,
+    volumeRatio,
+    reason,
+  };
 }
 
 export function scoreLabel(score: number): string {

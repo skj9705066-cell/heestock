@@ -162,11 +162,23 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
     const rawChange  = num(o.prdy_vrss) ?? 0;
     const change     = (sign === 4 || sign === 5) ? -Math.abs(rawChange) : Math.abs(rawChange);
     const rawPct     = num(o.prdy_ctrt) ?? 0;
-    // Recalculate from actual price delta; prdy_ctrt can return "0.00" for
-    // mid/small-cap KOSDAQ stocks (e.g. 파두 440110) due to KIS data inconsistency.
-    const changePct  = prevClose > 0
-      ? Math.round((change / prevClose) * 10000) / 100
-      : (sign === 4 || sign === 5 ? -Math.abs(rawPct) : Math.abs(rawPct));
+    let changePct    = (sign === 4 || sign === 5) ? -Math.abs(rawPct) : Math.abs(rawPct);
+
+    // ── 한국 주식 일일 ±30% 한도 초과 시 직접 재계산 ──────────────────────────
+    // KIS가 권리락·우선주 등에서 잘못된 prdy_ctrt를 반환하는 케이스 방어
+    if (Math.abs(changePct) > 30 && price > 0 && prevClose > 0) {
+      const recalcPct = (price - prevClose) / prevClose * 100;
+      console.warn(
+        `[kis] ${code}: prdy_ctrt=${changePct.toFixed(2)}% suspicious, ` +
+        `recalc from price/prevClose → ${recalcPct.toFixed(2)}%`
+      );
+      changePct = recalcPct;
+    }
+    // 재계산 후에도 ±50% 초과이면 데이터 자체가 신뢰 불가 → Yahoo fallback 유도
+    if (Math.abs(changePct) > 50 && price > 0) {
+      console.warn(`[kis] ${code}: changePct ${changePct.toFixed(2)}% still abnormal, returning null for Yahoo fallback`);
+      return null;
+    }
     const htsAvls    = num(o.hts_avls); // 단위: 억원
     return {
       stockCode:        code,

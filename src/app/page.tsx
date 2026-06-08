@@ -1,10 +1,11 @@
-import { MarketIndexCard }   from "@/components/dashboard/MarketIndexCard";
-import { MarketSummaryAI }  from "@/components/dashboard/MarketSummaryAI";
-import { InvestorTrend }    from "@/components/dashboard/InvestorTrend";
-import { TopStocks }        from "@/components/dashboard/TopStocks";
-import { SectorHeatmap }    from "@/components/dashboard/SectorHeatmap";
-import { MarketIndexChart } from "@/components/dashboard/MarketIndexChart";
-import { WatchlistSection } from "@/components/watchlist/WatchlistSection";
+import { MarketIndexCard }     from "@/components/dashboard/MarketIndexCard";
+import { MarketSummaryAI }    from "@/components/dashboard/MarketSummaryAI";
+import { InvestorTrend }      from "@/components/dashboard/InvestorTrend";
+import { TopStocks }          from "@/components/dashboard/TopStocks";
+import { SectorHeatmap }      from "@/components/dashboard/SectorHeatmap";
+import { MarketIndexChart }   from "@/components/dashboard/MarketIndexChart";
+import { WatchlistSection }   from "@/components/watchlist/WatchlistSection";
+import { BounceAlertsClient } from "@/components/watchlist/BounceAlertsClient";
 import {
   getMarketIndices,
   getTopStocks,
@@ -49,6 +50,9 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* 지지선 반등 알림 (관심종목 중 반등 신호 있는 것만) */}
+      <BounceAlertsClient />
 
       {/* 관심종목 */}
       <WatchlistSection />
