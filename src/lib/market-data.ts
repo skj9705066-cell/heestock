@@ -62,6 +62,10 @@ const US_POOL: Record<string, string> = {
 
 // ── Market Indices ────────────────────────────────────────────────────────────
 
+// 지수 캐시 (일시 빈 응답 대비)
+const _indexCache = new Map<string, { data: MarketIndex; ts: number }>();
+const INDEX_STALE_OK_TTL = 6 * 60 * 60_000; // 6시간
+
 export async function getMarketIndices(): Promise<MarketIndex[]> {
   try {
     const result: MarketIndex[] = [];
@@ -74,32 +78,52 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
 
     if (kospiRes.status === "fulfilled" && kospiRes.value) {
       const k = kospiRes.value;
-      result.push({
+      const indexData: MarketIndex = {
         symbol: "^KS11",
         name: "코스피",
         value: Math.round(k.price * 100) / 100,
         change: Math.round(k.change * 100) / 100,
         changePercent: Math.round(k.changePercent * 100) / 100,
         market: "KR",
-      });
+      };
+      result.push(indexData);
+      _indexCache.set("^KS11", { data: indexData, ts: Date.now() });
       console.log(`[market-data] 코스피 (KIS): ${k.price.toFixed(2)} / ${k.changePercent.toFixed(2)}%`);
     } else {
-      console.error("[market-data] 코스피 KIS 조회 실패");
+      // 일시 실패: stale cache 시도
+      const cached = _indexCache.get("^KS11");
+      if (cached && Date.now() - cached.ts < INDEX_STALE_OK_TTL) {
+        const cacheAge = Math.round((Date.now() - cached.ts) / 60000);
+        console.warn(`[market-data] 코스피 KIS 조회 실패 - using stale cache (${cacheAge}min)`);
+        result.push(cached.data);
+      } else {
+        console.error("[market-data] 코스피 KIS 조회 실패 - no stale cache available");
+      }
     }
 
     if (kosdaqRes.status === "fulfilled" && kosdaqRes.value) {
       const k = kosdaqRes.value;
-      result.push({
+      const indexData: MarketIndex = {
         symbol: "^KQ11",
         name: "코스닥",
         value: Math.round(k.price * 100) / 100,
         change: Math.round(k.change * 100) / 100,
         changePercent: Math.round(k.changePercent * 100) / 100,
         market: "KR",
-      });
+      };
+      result.push(indexData);
+      _indexCache.set("^KQ11", { data: indexData, ts: Date.now() });
       console.log(`[market-data] 코스닥 (KIS): ${k.price.toFixed(2)} / ${k.changePercent.toFixed(2)}%`);
     } else {
-      console.error("[market-data] 코스닥 KIS 조회 실패");
+      // 일시 실패: stale cache 시도
+      const cached = _indexCache.get("^KQ11");
+      if (cached && Date.now() - cached.ts < INDEX_STALE_OK_TTL) {
+        const cacheAge = Math.round((Date.now() - cached.ts) / 60000);
+        console.warn(`[market-data] 코스닥 KIS 조회 실패 - using stale cache (${cacheAge}min)`);
+        result.push(cached.data);
+      } else {
+        console.error("[market-data] 코스닥 KIS 조회 실패 - no stale cache available");
+      }
     }
 
     // 2. 미국 지수: Yahoo Finance (나스닥, S&P500)

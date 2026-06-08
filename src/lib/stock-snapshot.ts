@@ -459,6 +459,7 @@ async function buildUsFinancials(symbol: string): Promise<SnapshotFinancials | u
 
 const _snapshotCache = new Map<string, { data: StockSnapshot; ts: number }>();
 const SNAPSHOT_TTL = 60_000; // 60초 캐시 (옛 값 방지)
+const STALE_OK_TTL = 6 * 60 * 60_000; // 6시간 (일시 빈 응답 시 오래된 캐시 허용)
 
 export async function buildStockSnapshot(
   symbol: string,
@@ -527,8 +528,18 @@ export async function buildStockSnapshot(
     };
     console.log(`[stock-snapshot] ${stockCode}: getQuote() success - ${quoteData.source} - price=${quote.price}, change=${quote.changePercent.toFixed(2)}%`);
   } else {
-    errors.push("실시간 시세 조회 실패");
-    console.error(`[stock-snapshot] ${stockCode}: getQuote() failed - no data`);
+    // 시세 조회 실패: 일시적 빈 응답일 수 있음
+    console.error(`[stock-snapshot] ${stockCode}: getQuote() failed - checking stale cache`);
+
+    // 한국 종목이고 6시간 이내 stale cache가 있으면 유지
+    if (isKr && hit && Date.now() - hit.ts < STALE_OK_TTL && hit.data.quote) {
+      const cacheAge = Math.round((Date.now() - hit.ts) / 60000);
+      console.log(`[stock-snapshot] ${stockCode}: Using stale quote (age: ${cacheAge}min)`);
+      quote = hit.data.quote;
+      errors.push(`시세 조회 일시 실패 (${cacheAge}분 전 데이터)`);
+    } else {
+      errors.push("실시간 시세 조회 실패");
+    }
   }
 
   // Key stats: KIS 우선, Yahoo fallback
@@ -571,7 +582,7 @@ export async function buildStockSnapshot(
     errors,
   };
 
-  // 성공한 결과만 캐시 (TTL 60초)
+  // 캐시 업데이트: quote가 있으면 (신규 또는 stale) 항상 캐시
   if (quote) {
     _snapshotCache.set(cacheKey, { data: snapshot, ts: Date.now() });
   }

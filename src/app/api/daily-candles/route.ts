@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 const cache = new Map<string, { data: OHLCVPoint[]; ts: number }>();
 const CACHE_TTL = 15 * 60_000; // 15분
+const STALE_OK_TTL = 24 * 60 * 60_000; // 24시간 (일시 빈 응답 시 오래된 캐시 허용)
 
 // Yahoo Finance fallback for US stocks
 async function fetchYahooCandles(symbol: string, days: number): Promise<OHLCVPoint[]> {
@@ -68,11 +69,45 @@ export async function GET(req: NextRequest) {
       const kisData = await fetchKisDailyCandles(symbol, days);
       if (kisData.length >= 20) {
         data = kisData;
+      } else if (kisData.length === 0) {
+        // 빈 응답: 장 마감 직후 일시적 공백일 수 있음
+        console.warn(`[daily-candles] KIS returned empty array for ${symbol} - checking stale cache`);
+
+        // 24시간 이내 오래된 캐시가 있으면 유지
+        if (cached && Date.now() - cached.ts < STALE_OK_TTL) {
+          console.log(`[daily-candles] Using stale cache for ${symbol} (age: ${Math.round((Date.now() - cached.ts) / 60000)}min)`);
+          return Response.json(cached.data, {
+            headers: {
+              "X-Cache": "STALE",
+              "X-Cache-Age": String(Math.round((Date.now() - cached.ts) / 1000)),
+            },
+          });
+        }
+
+        // 캐시 없으면 빈 배열 + 안내 헤더
+        console.warn(`[daily-candles] No stale cache available for ${symbol} - returning empty with notice`);
+        return Response.json([], {
+          headers: {
+            "X-No-Data": "true",
+            "X-Notice": "장 마감 후 데이터 준비 중",
+          },
+        });
       } else {
         console.warn(`[daily-candles] KIS returned insufficient data: ${kisData.length} candles (need 20+)`);
       }
     } catch (e) {
       console.error("[daily-candles] KIS failed:", (e as Error).message);
+
+      // API 에러 시에도 stale cache 시도
+      if (cached && Date.now() - cached.ts < STALE_OK_TTL) {
+        console.log(`[daily-candles] Using stale cache after error for ${symbol}`);
+        return Response.json(cached.data, {
+          headers: {
+            "X-Cache": "STALE-ERROR",
+            "X-Cache-Age": String(Math.round((Date.now() - cached.ts) / 1000)),
+          },
+        });
+      }
     }
   } else {
     // US stocks: Yahoo Finance
