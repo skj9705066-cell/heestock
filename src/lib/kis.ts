@@ -182,27 +182,54 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
       return null;
     }
     const o = json.output;
-    const price      = num(o.stck_prpr) ?? 0;
+    let price = num(o.stck_prpr) ?? 0;
     const prevClose  = num(o.stck_sdpr) ?? price;
+
+    // ── 장 마감 후 0원 방지: 실시간 가격이 없으면 일봉에서 당일 종가 가져오기 ───
+    if (price === 0 || !price) {
+      console.warn(`[kis] ${code}: stck_prpr is 0 or empty, fetching closing price from daily candles`);
+      try {
+        const candles = await fetchKisDailyCandles(code, 1);
+        if (candles.length > 0 && candles[candles.length - 1].close > 0) {
+          price = candles[candles.length - 1].close;
+          console.log(`[kis] ${code}: Using today's closing price ${price} from daily candles`);
+        } else {
+          console.warn(`[kis] ${code}: No valid closing price available - returning null`);
+          return null;
+        }
+      } catch (err) {
+        console.error(`[kis] ${code}: Failed to fetch closing price:`, (err as Error).message);
+        return null;
+      }
+    }
+
     const sign       = num(o.prdy_vrss_sign) ?? 3;
-    const rawChange  = num(o.prdy_vrss) ?? 0;
-    const change     = (sign === 4 || sign === 5) ? -Math.abs(rawChange) : Math.abs(rawChange);
+    let rawChange    = num(o.prdy_vrss) ?? 0;
+    let change       = (sign === 4 || sign === 5) ? -Math.abs(rawChange) : Math.abs(rawChange);
     const rawPct     = num(o.prdy_ctrt) ?? 0;
     let changePct    = (sign === 4 || sign === 5) ? -Math.abs(rawPct) : Math.abs(rawPct);
 
-    // ── 한국 주식 일일 ±30% 한도 초과 시 직접 재계산 ──────────────────────────
-    // KIS가 권리락·우선주 등에서 잘못된 prdy_ctrt를 반환하는 케이스 방어
-    if (Math.abs(changePct) > 30 && price > 0 && prevClose > 0) {
-      const recalcPct = (price - prevClose) / prevClose * 100;
-      console.warn(
-        `[kis] ${code}: prdy_ctrt=${changePct.toFixed(2)}% suspicious, ` +
-        `recalc from price/prevClose → ${recalcPct.toFixed(2)}%`
-      );
-      changePct = recalcPct;
+    // ── 종가 사용 시 등락률 재계산 (장 마감 후 또는 비정상 값) ────────────────
+    // 현재가와 전일종가로 직접 계산하여 정확도 확보
+    if (price > 0 && prevClose > 0) {
+      const recalcChange = price - prevClose;
+      const recalcPct = (recalcChange / prevClose) * 100;
+
+      // ±30% 초과하거나 부호 불일치 시 재계산 값 사용
+      const signMismatch = (change > 0 && changePct < -0.01) || (change < 0 && changePct > 0.01);
+      if (Math.abs(changePct) > 30 || signMismatch || rawChange === 0) {
+        console.warn(
+          `[kis] ${code}: Recalculating change - original: ${change}/${changePct.toFixed(2)}%, ` +
+          `recalc: ${recalcChange}/${recalcPct.toFixed(2)}%`
+        );
+        change = recalcChange;
+        changePct = recalcPct;
+      }
     }
-    // 재계산 후에도 ±50% 초과이면 데이터 자체가 신뢰 불가 → Yahoo fallback 유도
+
+    // 재계산 후에도 ±50% 초과이면 데이터 자체가 신뢰 불가
     if (Math.abs(changePct) > 50 && price > 0) {
-      console.warn(`[kis] ${code}: changePct ${changePct.toFixed(2)}% still abnormal, returning null for Yahoo fallback`);
+      console.warn(`[kis] ${code}: changePct ${changePct.toFixed(2)}% still abnormal, returning null`);
       return null;
     }
     const htsAvls    = num(o.hts_avls); // 단위: 억원
