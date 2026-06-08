@@ -509,25 +509,47 @@ export async function buildStockSnapshot(
   // Quote: prefer KIS (authoritative for KR), fall back to Yahoo
   const yfQuote  = qRes.status === "fulfilled" ? qRes.value : null;
   let quote: SnapshotQuote | undefined;
-  if (isKr && kisPrice) {
-    quote = buildKrQuoteFromKis(kisPrice);
-  } else {
-    quote = buildQuote(yfQuote, market);
-  }
-  if (!quote) errors.push("실시간 시세 조회 실패");
-  else if (isKr && !kisPrice) errors.push("KIS 시세 조회 실패 (Yahoo 폴백)");
+  let quoteSource = "";
 
-  // Key stats: prefer KIS for KR (PER/PBR/EPS/BPS), Yahoo for US
+  if (isKr && kisPrice) {
+    // 한국 종목: KIS 단일 소스 사용 (Yahoo 데이터 사용 안 함)
+    quote = buildKrQuoteFromKis(kisPrice);
+    quoteSource = "KIS";
+    console.log(`[stock-snapshot] ${stockCode}: Using KIS data - price=${kisPrice.price}, change=${kisPrice.changePercent.toFixed(2)}%`);
+  } else if (isKr && !kisPrice) {
+    // KIS 실패 시에만 Yahoo 폴백
+    quote = buildQuote(yfQuote, market);
+    quoteSource = "Yahoo (KIS failed)";
+    console.warn(`[stock-snapshot] ${stockCode}: KIS failed, fallback to Yahoo`);
+    errors.push("KIS 시세 조회 실패 (Yahoo 폴백)");
+  } else {
+    // 미국 종목: Yahoo 사용
+    quote = buildQuote(yfQuote, market);
+    quoteSource = "Yahoo";
+  }
+
+  if (!quote) {
+    errors.push("실시간 시세 조회 실패");
+    console.error(`[stock-snapshot] ${stockCode}: Failed to get quote from any source`);
+  }
+
+  // Key stats: KIS for KR (단일 소스), Yahoo for US
   const yfStats = ksRes.status === "fulfilled" ? ksRes.value : null;
   let keyStats: SnapshotKeyStats | undefined;
+
   if (isKr && kisPrice) {
-    const kis = buildKrKeyStatsFromKis(kisPrice);
-    const yf  = buildKeyStats(yfStats);
-    // Merge: KIS values take priority, but keep YF's forwardPE / PSR / EV/EBITDA if present
-    keyStats = { ...yf, ...kis };
-  } else {
+    // 한국 종목: KIS만 사용 (Yahoo 데이터 섞지 않음)
+    keyStats = buildKrKeyStatsFromKis(kisPrice);
+    console.log(`[stock-snapshot] ${stockCode}: Using KIS key stats - PER=${kisPrice.per}, PBR=${kisPrice.pbr}`);
+  } else if (isKr && !kisPrice && yfStats) {
+    // KIS 실패 시에만 Yahoo 폴백
+    keyStats = buildKeyStats(yfStats);
+    console.warn(`[stock-snapshot] ${stockCode}: Using Yahoo key stats (KIS failed)`);
+  } else if (!isKr) {
+    // 미국 종목: Yahoo 사용
     keyStats = buildKeyStats(yfStats);
   }
+
   if (!keyStats) errors.push("재무비율(PER/PBR/ROE) 조회 실패");
 
   const priceHistory = histRes.status === "fulfilled" ? buildPriceHistory(histRes.value) : undefined;
