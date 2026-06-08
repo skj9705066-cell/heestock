@@ -29,10 +29,35 @@
 
       try {
         const list = JSON.parse(data);
-        output.innerHTML = `
-          <h2>관심종목 (${list.length}개)</h2>
-          <pre>${JSON.stringify(list, null, 2)}</pre>
-        `;
+
+        // 문제 종목 검증
+        const problems = [];
+        list.forEach((item, i) => {
+          if (!item.market) {
+            problems.push(`${i}: ${item.name}(${item.symbol}) - market 필드 없음`);
+          }
+          if (!item.symbol || item.symbol.length !== 6) {
+            problems.push(`${i}: ${item.name}(${item.symbol}) - symbol 길이 ${item.symbol?.length ?? 0}자 (6자 필요)`);
+          }
+          if (typeof item.symbol === 'number') {
+            problems.push(`${i}: ${item.name}(${item.symbol}) - symbol이 숫자 타입 (문자열 필요)`);
+          }
+        });
+
+        let html = `<h2>관심종목 (${list.length}개)</h2>`;
+
+        if (problems.length > 0) {
+          html += `<h3 style="color: red;">⚠️ 문제 발견 (${problems.length}개)</h3><ul>`;
+          problems.forEach(p => {
+            html += `<li>${p}</li>`;
+          });
+          html += '</ul>';
+        } else {
+          html += '<h3 style="color: green;">✓ 모든 종목 정상</h3>';
+        }
+
+        html += `<pre>${JSON.stringify(list, null, 2)}</pre>`;
+        output.innerHTML = html;
       } catch (e) {
         output.innerHTML = `<h2>에러: ${e.message}</h2><pre>${data}</pre>`;
       }

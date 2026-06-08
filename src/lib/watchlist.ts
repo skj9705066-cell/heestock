@@ -13,15 +13,37 @@ export function getWatchlist(): WatchlistItem[] {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "[]");
 
-    // Migration: 오래된 데이터에 market 필드가 없을 수 있음
+    // Migration: 오래된 데이터 정규화
     const migrated = raw.map((item: any) => {
-      if (!item.market) {
-        // 6자리 숫자면 한국 종목, 그 외는 미국
-        const detectedMarket = /^\d{6}$/.test(item.symbol) ? "KR" : "US";
-        console.warn(`[watchlist] ${item.symbol} (${item.name}): market 필드 없음 → ${detectedMarket}로 자동 설정`);
-        return { ...item, market: detectedMarket };
+      let updated = { ...item };
+      let needsUpdate = false;
+
+      // 1. symbol을 문자열로 강제 변환 (숫자로 저장된 경우 대비)
+      if (typeof item.symbol !== "string") {
+        updated.symbol = String(item.symbol);
+        needsUpdate = true;
+        console.warn(`[watchlist] ${item.name}: symbol을 문자열로 변환 (${typeof item.symbol} → string)`);
       }
-      return item;
+
+      // 2. 한국 종목 symbol을 6자리로 패딩 (앞자리 0 복구)
+      if (updated.symbol && /^\d+$/.test(updated.symbol)) {
+        const padded = updated.symbol.padStart(6, "0");
+        if (padded !== updated.symbol) {
+          console.warn(`[watchlist] ${item.name}: symbol 패딩 (${updated.symbol} → ${padded})`);
+          updated.symbol = padded;
+          needsUpdate = true;
+        }
+      }
+
+      // 3. market 필드 없으면 자동 설정
+      if (!updated.market) {
+        const detectedMarket = /^\d{6}$/.test(updated.symbol) ? "KR" : "US";
+        console.warn(`[watchlist] ${updated.symbol} (${item.name}): market 필드 없음 → ${detectedMarket}로 자동 설정`);
+        updated.market = detectedMarket;
+        needsUpdate = true;
+      }
+
+      return updated;
     });
 
     // 변경사항이 있으면 저장

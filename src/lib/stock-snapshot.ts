@@ -475,8 +475,18 @@ export async function buildStockSnapshot(
   const asOfDateKr = fmtDateKr(now);
   const errors: string[] = [];
 
-  const stockCode = symbol.replace(/\.(KS|KQ)$/, "");
+  // 종목코드 정규화: .KS/.KQ 제거, 한국 종목은 6자리로 패딩
+  let stockCode = String(symbol).replace(/\.(KS|KQ)$/, "");
   const isKr = market === "KR";
+
+  // 한국 종목: 숫자로 변환되었거나 앞자리 0이 떨어진 경우 복구
+  if (isKr && /^\d+$/.test(stockCode)) {
+    const padded = stockCode.padStart(6, "0");
+    if (padded !== stockCode) {
+      console.warn(`[stock-snapshot] ${stockCode} → ${padded} (6자리 패딩)`);
+      stockCode = padded;
+    }
+  }
 
   // ── 1. Quote: 단일 getQuote() 함수 사용 ──────────────────────────────────
   const quotePromise = getQuote(stockCode, market);

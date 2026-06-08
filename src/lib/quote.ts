@@ -170,7 +170,16 @@ function normalizeYahooQuote(yf: YFQuote, market: "KR" | "US"): Quote | null {
  * @returns Quote | null (조회 실패 시 null, 절대 옛 캐시값 반환 안 함)
  */
 export async function getQuote(symbol: string, market: "KR" | "US"): Promise<Quote | null> {
-  const cleanSymbol = symbol.replace(/\.(KS|KQ)$/, "");
+  // 종목코드 정규화: .KS/.KQ 제거, 한국 종목은 6자리로 패딩
+  let cleanSymbol = String(symbol).replace(/\.(KS|KQ)$/, "");
+
+  // 한국 종목: 숫자로 변환되었거나 앞자리 0이 떨어진 경우 복구
+  if (market === "KR" && /^\d+$/.test(cleanSymbol)) {
+    cleanSymbol = cleanSymbol.padStart(6, "0");
+    if (cleanSymbol !== symbol) {
+      console.warn(`[getQuote] ${symbol} → ${cleanSymbol} (6자리 패딩)`);
+    }
+  }
 
   console.log(`[getQuote] ${cleanSymbol} (${market}) - start`);
 
