@@ -21,7 +21,9 @@ async function getToken(): Promise<string> {
   if (_tokenPromise) return _tokenPromise;
 
   if (!appKey() || !appSecret()) {
-    throw new Error("KIS_APP_KEY / KIS_APP_SECRET not set");
+    const errMsg = `KIS credentials missing - APP_KEY: ${appKey() ? 'OK' : 'MISSING'}, APP_SECRET: ${appSecret() ? 'OK' : 'MISSING'}`;
+    console.error(`[kis] ${errMsg}`);
+    throw new Error(errMsg);
   }
 
   _tokenPromise = (async () => {
@@ -37,7 +39,9 @@ async function getToken(): Promise<string> {
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
-      throw new Error(`KIS oauth2 ${res.status}: ${txt.slice(0, 200)}`);
+      const errMsg = `KIS oauth2 failed - status: ${res.status}, response: ${txt.slice(0, 200)}`;
+      console.error(`[kis] ${errMsg}`);
+      throw new Error(errMsg);
     }
     const json = await res.json() as { access_token: string; expires_in: number };
     _token = {
@@ -81,7 +85,9 @@ async function callKis<T>(
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`KIS ${path} ${res.status}: ${txt.slice(0, 200)}`);
+    const errMsg = `KIS API failed - path: ${path}, status: ${res.status}, response: ${txt.slice(0, 200)}`;
+    console.error(`[kis] ${errMsg}`);
+    throw new Error(errMsg);
   }
   return res.json() as Promise<T>;
 }
@@ -179,7 +185,9 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
     }
 
     if (json.rt_cd !== "0" || !json.output) {
-      console.warn(`[kis] inquire-price ${code} FAILED: rt_cd=${json.rt_cd}, msg1=${json.msg1}`);
+      const errMsg = `KIS inquire-price failed - code: ${code}, rt_cd: ${json.rt_cd}, msg1: ${json.msg1 || 'N/A'}`;
+      console.error(`[kis] ${errMsg}`);
+      console.error(`[kis] Full response:`, JSON.stringify(json).slice(0, 500));
       return null;
     }
     const o = json.output;
@@ -262,7 +270,9 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
       bps:              num(o.bps),
     };
   } catch (err) {
-    console.warn(`[kis] inquire-price failed for ${stockCode}:`, (err as Error).message);
+    const errMsg = `KIS inquire-price exception - code: ${stockCode}, error: ${(err as Error).message}`;
+    console.error(`[kis] ${errMsg}`);
+    console.error(`[kis] Stack:`, (err as Error).stack);
     return null;
   }
 }
