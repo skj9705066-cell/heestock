@@ -26,6 +26,11 @@ export interface Quote {
   marketCap?: number;
   currency: string;
   source: "KIS" | "Yahoo";
+  // KeyStats 정보 (KIS에서 함께 제공)
+  per?: number;
+  pbr?: number;
+  eps?: number;
+  bps?: number;
 }
 
 /**
@@ -106,6 +111,11 @@ function normalizeKisQuote(kis: KisPrice, stockCode: string): Quote | null {
     marketCap: kis.marketCap,
     currency: "KRW",
     source: "KIS",
+    // KeyStats 포함 (중복 조회 방지)
+    per: kis.per,
+    pbr: kis.pbr,
+    eps: kis.eps,
+    bps: kis.bps,
   };
 }
 

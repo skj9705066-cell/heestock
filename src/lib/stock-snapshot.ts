@@ -12,7 +12,7 @@ import {
   type YFIncomeRow,
 } from "@/lib/yahoo-finance";
 import { fetchDartKrFinancials } from "@/lib/dart";
-import { fetchKisInvestorFlow, fetchKisPrice, type KisInvestorDay, type KisPrice } from "@/lib/kis";
+import { fetchKisInvestorFlow, type KisInvestorDay } from "@/lib/kis";
 import { getQuote, type Quote } from "@/lib/quote";
 
 export type Market = "KR" | "US";
@@ -262,43 +262,7 @@ function buildKeyStats(stats: YFKeyStats | null): SnapshotKeyStats | undefined {
   };
 }
 
-// ── KIS-based builders (KR primary source) ──────────────────────────────────
-
-function buildKrQuoteFromKis(k: KisPrice | null): SnapshotQuote | undefined {
-  if (!k || !k.price) return undefined;
-  const high = k.fiftyTwoWeekHigh, low = k.fiftyTwoWeekLow;
-  const pricePosition52w = (high && low && high > low)
-    ? pct(((k.price - low) / (high - low)) * 100)
-    : undefined;
-  return {
-    price:             k.price,
-    change:            Math.round(k.change * 100) / 100,
-    changePercent:     pct(k.changePercent),
-    volume:            k.volume,
-    dayHigh:           k.dayHigh,
-    dayLow:            k.dayLow,
-    previousClose:     k.previousClose,
-    fiftyTwoWeekHigh:  k.fiftyTwoWeekHigh,
-    fiftyTwoWeekLow:   k.fiftyTwoWeekLow,
-    pricePosition52w,
-    marketCap:         k.marketCap,
-    currency:          "KRW",
-  };
-}
-
-function buildKrKeyStatsFromKis(k: KisPrice | null): SnapshotKeyStats | undefined {
-  if (!k) return undefined;
-  // KIS provides PER / PBR / EPS / BPS directly. ROE = EPS / BPS × 100 when both present.
-  const roe = (k.eps !== undefined && k.bps !== undefined && k.bps > 0)
-    ? pct((k.eps / k.bps) * 100)
-    : undefined;
-  return {
-    trailingPE:  k.per,
-    priceToBook: k.pbr,
-    returnOnEquity: roe,
-    trailingEps: k.eps,
-  };
-}
+// ── Investor flow builder ───────────────────────────────────────────────────
 
 function buildInvestorFlow(days: KisInvestorDay[]): SnapshotInvestorFlow | undefined {
   if (!days.length) return undefined;
@@ -489,20 +453,18 @@ export async function buildStockSnapshot(
     }
   }
 
-  // ── 1. Quote: 단일 getQuote() 함수 사용 ──────────────────────────────────
+  // ── 1. Quote: 단일 getQuote() 함수 사용 (KeyStats 포함) ───────────────────
   const quotePromise = getQuote(stockCode, market);
 
   // ── 2. 기타 데이터: 병렬 조회 ──────────────────────────────────────────────
   const kisFlowPromise = isKr ? fetchKisInvestorFlow(stockCode, 5) : Promise.resolve([]);
-  const kisStatsPromise = isKr ? fetchKisPrice(stockCode) : Promise.resolve(null);
 
-  const [quoteRes, ksRes, histRes, finRes, flowRes, kisStatsRes] = await Promise.allSettled([
+  const [quoteRes, ksRes, histRes, finRes, flowRes] = await Promise.allSettled([
     quotePromise,
     fetchYFKeyStats(stockCode),
     fetchYFPriceHistory(stockCode, "1y"),
     isKr ? buildKrFinancials(stockCode) : buildUsFinancials(stockCode),
     kisFlowPromise,
-    kisStatsPromise,
   ]);
 
   // Quote 결과
@@ -542,13 +504,21 @@ export async function buildStockSnapshot(
     }
   }
 
-  // Key stats: KIS 우선, Yahoo fallback
-  const kisStats = kisStatsRes.status === "fulfilled" ? kisStatsRes.value : null;
+  // Key stats: getQuote() 결과에서 추출 (한국), Yahoo fallback (미국)
   const yfStats = ksRes.status === "fulfilled" ? ksRes.value : null;
   let keyStats: SnapshotKeyStats | undefined;
 
-  if (isKr && kisStats) {
-    keyStats = buildKrKeyStatsFromKis(kisStats);
+  if (isKr && quoteData && (quoteData.per || quoteData.pbr)) {
+    // KIS Quote에 KeyStats 포함됨 (중복 조회 제거)
+    const roe = (quoteData.eps !== undefined && quoteData.bps !== undefined && quoteData.bps > 0)
+      ? pct((quoteData.eps / quoteData.bps) * 100)
+      : undefined;
+    keyStats = {
+      trailingPE: quoteData.per,
+      priceToBook: quoteData.pbr,
+      returnOnEquity: roe,
+      trailingEps: quoteData.eps,
+    };
   } else if (yfStats) {
     keyStats = buildKeyStats(yfStats);
   }
