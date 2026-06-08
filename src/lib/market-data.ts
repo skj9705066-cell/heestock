@@ -64,43 +64,56 @@ const US_POOL: Record<string, string> = {
 export async function getMarketIndices(): Promise<MarketIndex[]> {
   try {
     const symbols = Object.keys(INDEX_SYMBOLS);
-    const quotes  = await fetchYFQuotes(symbols);
+
+    // 각 지수별로 최근 5일 히스토리 가져오기 (정확한 전일종가 확보)
+    const historyPromises = symbols.map(sym => fetchYFPriceHistory(sym, "5d"));
+    const historyResults = await Promise.allSettled(historyPromises);
 
     const result: MarketIndex[] = [];
-    // Keep order: KOSPI, KOSDAQ, NASDAQ, S&P500
-    for (const sym of symbols) {
-      const q = quotes.find(r => r.symbol === sym);
-      if (!q?.regularMarketPrice) continue;
 
-      // 등락률 검증: 지수는 ±10% 이상 의심
-      let changePercent = q.regularMarketChangePercent ?? 0;
-      const price = q.regularMarketPrice;
-      const prev = q.regularMarketPreviousClose;
+    symbols.forEach((sym, i) => {
+      const histRes = historyResults[i];
 
-      if (Math.abs(changePercent) > 10 && price > 0 && prev && prev > 0) {
-        const recalcPct = ((price - prev) / prev) * 100;
-        console.warn(
-          `[market-data] ${sym} (${INDEX_SYMBOLS[sym].name}): changePercent=${changePercent.toFixed(2)}% suspicious, ` +
-          `recalc from price/prev → ${recalcPct.toFixed(2)}%`
-        );
-        changePercent = recalcPct;
+      if (histRes.status === "rejected" || !histRes.value || histRes.value.length < 2) {
+        console.warn(`[market-data] ${sym}: 히스토리 데이터 부족, 건너뜀`);
+        return;
       }
 
-      // change도 재계산
-      const change = prev ? price - prev : (q.regularMarketChange ?? 0);
+      const history = histRes.value;
+      // 최근 2일: [n-1] = 전일, [n] = 당일
+      const todayPoint = history[history.length - 1];
+      const yesterdayPoint = history[history.length - 2];
+
+      const price = todayPoint.close;
+      const prev = yesterdayPoint.close;
+
+      if (!price || !prev || price <= 0 || prev <= 0) {
+        console.warn(`[market-data] ${sym}: 잘못된 가격 데이터`);
+        return;
+      }
+
+      const change = price - prev;
+      const changePercent = (change / prev) * 100;
+
+      console.log(`[market-data] ${sym} (${INDEX_SYMBOLS[sym].name}):`);
+      console.log(`  - 당일 close: ${price.toFixed(2)}`);
+      console.log(`  - 전일 close: ${prev.toFixed(2)}`);
+      console.log(`  - change: ${change.toFixed(2)}`);
+      console.log(`  - changePercent: ${changePercent.toFixed(2)}%`);
 
       result.push({
         symbol:        sym,
         name:          INDEX_SYMBOLS[sym].name,
-        value:         price,
-        change:        change,
-        changePercent: changePercent,
+        value:         Math.round(price * 100) / 100,
+        change:        Math.round(change * 100) / 100,
+        changePercent: Math.round(changePercent * 100) / 100,
         market:        INDEX_SYMBOLS[sym].market,
       });
-    }
+    });
 
     return result.slice(0, 4);
-  } catch {
+  } catch (err) {
+    console.error("[market-data] getMarketIndices error:", err);
     return [];
   }
 }
