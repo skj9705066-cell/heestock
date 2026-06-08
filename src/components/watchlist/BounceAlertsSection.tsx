@@ -60,14 +60,14 @@ export function BounceAlertsSection({ watchlist }: Props) {
       await Promise.all(
         watchlist.map(async (item) => {
           try {
-            // 브라우저 캐시 완전 무효화: 버전(v=2.0) + timestamp
+            // 브라우저 캐시 완전 무효화: 버전(v=2.1) + timestamp
             const ts = Date.now();
             const [snapRes, candleRes] = await Promise.allSettled([
-              fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=2.0&_t=${ts}`, {
+              fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=2.1&_t=${ts}`, {
                 cache: "no-store",
                 headers: { "Cache-Control": "no-cache" },
               }),
-              fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=2.0&_t=${ts}`, {
+              fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=2.1&_t=${ts}`, {
                 cache: "no-store",
               }),
             ]);
