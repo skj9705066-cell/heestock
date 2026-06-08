@@ -49,9 +49,9 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
       setLoading(true);
       console.log(`[WatchlistCard] Loading ${item.symbol} (${item.name}) - market: ${item.market}`);
       try {
-        // 브라우저 캐시 완전 무효화: 버전(v=4.0) + timestamp
+        // 브라우저 캐시 완전 무효화: 버전 + timestamp
         const ts = Date.now();
-        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=4.0&_t=${ts}`;
+        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=final&_t=${ts}`;
         console.log(`[WatchlistCard] Fetching: ${url}`);
 
         const [snapRes, candleRes] = await Promise.allSettled([
@@ -59,7 +59,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
           }),
-          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=4.0&_t=${ts}`, {
+          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=final&_t=${ts}`, {
             cache: "no-store",
           }),
         ]);

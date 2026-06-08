@@ -18,29 +18,13 @@ export async function GET(req: NextRequest) {
 
   try {
     const snapshot = await buildStockSnapshot(symbol, name || symbol, market);
-
-    // 디버그: Vercel 환경에서 KIS 에러 추적
-    const debug: any = {};
-    if (!snapshot.quote) {
-      debug.quote_missing = true;
-      debug.errors = snapshot.errors;
-      debug.env_check = {
-        KIS_APP_KEY: process.env.KIS_APP_KEY ? `존재 (${process.env.KIS_APP_KEY.substring(0, 4)}...)` : "누락",
-        KIS_APP_SECRET: process.env.KIS_APP_SECRET ? `존재 (${process.env.KIS_APP_SECRET.substring(0, 4)}...)` : "누락",
-      };
-    }
-
-    return Response.json({ ...snapshot, _debug: debug }, {
+    return Response.json(snapshot, {
       headers: { "Cache-Control": "no-store, must-revalidate" },
     });
   } catch (err) {
     console.error("[stock-snapshot] error:", err);
     return Response.json(
-      {
-        error: "snapshot build failed",
-        message: (err as Error).message,
-        stack: (err as Error).stack,
-      },
+      { error: "snapshot build failed", message: (err as Error).message },
       { status: 500 },
     );
   }
