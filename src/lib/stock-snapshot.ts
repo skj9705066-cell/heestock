@@ -468,7 +468,14 @@ export async function buildStockSnapshot(
   ]);
 
   // Quote 결과
+  console.log(`[stock-snapshot] ${stockCode}: quoteRes.status=${quoteRes.status}`);
+  if (quoteRes.status === "rejected") {
+    console.error(`[stock-snapshot] ${stockCode}: quoteRes REJECTED:`, quoteRes.reason);
+  }
+
   const quoteData = quoteRes.status === "fulfilled" ? quoteRes.value : null;
+  console.log(`[stock-snapshot] ${stockCode}: quoteData=${quoteData ? 'EXISTS' : 'NULL'}, price=${quoteData?.price ?? 'N/A'}`);
+
   let quote: SnapshotQuote | undefined;
 
   if (quoteData) {
@@ -488,10 +495,10 @@ export async function buildStockSnapshot(
       marketCap: quoteData.marketCap,
       currency: quoteData.currency,
     };
-    console.log(`[stock-snapshot] ${stockCode}: getQuote() success - ${quoteData.source} - price=${quote.price}, change=${quote.changePercent.toFixed(2)}%`);
+    console.log(`[stock-snapshot] ${stockCode}: ✓ quote 생성 성공 - ${quoteData.source} - price=${quote.price}, change=${quote.changePercent.toFixed(2)}%`);
   } else {
     // 시세 조회 실패: 일시적 빈 응답일 수 있음
-    console.error(`[stock-snapshot] ${stockCode}: getQuote() failed - checking stale cache`);
+    console.error(`[stock-snapshot] ${stockCode}: ✗ getQuote() failed - checking stale cache`);
 
     // 한국 종목이고 6시간 이내 stale cache가 있으면 유지
     if (isKr && hit && Date.now() - hit.ts < STALE_OK_TTL && hit.data.quote) {

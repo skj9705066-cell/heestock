@@ -191,26 +191,33 @@ export async function getQuote(symbol: string, market: "KR" | "US"): Promise<Quo
     }
   }
 
-  console.log(`[getQuote] ${cleanSymbol} (${market}) - start`);
+  console.log(`[getQuote] === ${cleanSymbol} (${market}) 시작 ===`);
 
   // 한국 종목: KIS 단일 소스 (Yahoo fallback 제거)
   if (market === "KR") {
     try {
+      console.log(`[getQuote] ${cleanSymbol}: fetchKisPrice 호출 중...`);
       const kis = await fetchKisPrice(cleanSymbol);
+      console.log(`[getQuote] ${cleanSymbol}: fetchKisPrice 결과: ${kis ? 'EXISTS' : 'NULL'}, price=${kis?.price ?? 'N/A'}`);
+
       if (kis) {
         const quote = normalizeKisQuote(kis, cleanSymbol);
+        console.log(`[getQuote] ${cleanSymbol}: normalizeKisQuote 결과: ${quote ? 'EXISTS' : 'NULL'}, price=${quote?.price ?? 'N/A'}`);
+
         if (quote) {
-          console.log(`[getQuote] ${cleanSymbol}: KIS success - price=${quote.price}, change=${quote.changePercent.toFixed(2)}%`);
+          console.log(`[getQuote] ${cleanSymbol}: ✓ 최종 성공 - price=${quote.price}, change=${quote.changePercent.toFixed(2)}%`);
           return quote;
         }
-        console.warn(`[getQuote] ${cleanSymbol}: KIS returned data but validation failed`);
+        console.warn(`[getQuote] ${cleanSymbol}: ✗ KIS returned data but validation failed`);
+      } else {
+        console.error(`[getQuote] ${cleanSymbol}: ✗ fetchKisPrice returned NULL`);
       }
     } catch (err) {
-      console.error(`[getQuote] ${cleanSymbol}: KIS error:`, (err as Error).message);
+      console.error(`[getQuote] ${cleanSymbol}: ✗ KIS exception:`, (err as Error).message, (err as Error).stack);
     }
 
     // KIS 실패 시 null 반환 (fallback 없음)
-    console.error(`[getQuote] ${cleanSymbol}: KIS failed - no fallback for KR stocks`);
+    console.error(`[getQuote] ${cleanSymbol}: ✗✗✗ 최종 실패 - returning NULL`);
     return null;
   }
 
