@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, TrendingUp, X } from "lucide-react";
+import { Bell, TrendingUp, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn, formatPercent } from "@/lib/utils";
 import { WatchlistItem } from "@/lib/watchlist";
 import { calcSupportLevels, detectBounce, type OHLCVPoint, type BounceSignal } from "@/lib/support-levels";
@@ -22,12 +22,27 @@ export function BounceAlertsSection({ watchlist }: Props) {
   const [alerts, setAlerts] = useState<BounceAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
+  const [isExpanded, setIsExpanded] = useState(true);
 
   useEffect(() => {
     if ("Notification" in window) {
       setNotificationPermission(Notification.permission);
     }
   }, []);
+
+  // Load expansion state from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("heestock_bounce_alerts_expanded");
+    if (saved !== null) {
+      setIsExpanded(saved === "true");
+    }
+  }, []);
+
+  const toggleExpanded = () => {
+    const newState = !isExpanded;
+    setIsExpanded(newState);
+    localStorage.setItem("heestock_bounce_alerts_expanded", String(newState));
+  };
 
   useEffect(() => {
     if (!watchlist.length) {
@@ -129,14 +144,30 @@ export function BounceAlertsSection({ watchlist }: Props) {
   if (loading) {
     return (
       <section>
-        <div className="flex items-center gap-3 mb-4">
-          <Bell className="w-5 h-5 text-yellow-500 animate-pulse" />
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">지지선 반등 알림</h2>
-        </div>
-        <div className="card p-6 text-center">
-          <div className="inline-flex items-center gap-2 text-sm text-slate-500">
-            <div className="w-4 h-4 border-2 border-slate-300 border-t-yellow-500 rounded-full animate-spin" />
-            관심종목 스캔 중...
+        <button
+          onClick={toggleExpanded}
+          className="flex items-center justify-between w-full mb-4 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <Bell className="w-5 h-5 text-yellow-500 animate-pulse" />
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">🔔 지지선 반등 알림</h2>
+          </div>
+          {isExpanded ? (
+            <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+          )}
+        </button>
+        <div
+          className={`transition-all duration-300 ease-in-out overflow-hidden ${
+            isExpanded ? "max-h-[10000px] opacity-100" : "max-h-0 opacity-0"
+          }`}
+        >
+          <div className="card p-6 text-center">
+            <div className="inline-flex items-center gap-2 text-sm text-slate-500">
+              <div className="w-4 h-4 border-2 border-slate-300 border-t-yellow-500 rounded-full animate-spin" />
+              관심종목 스캔 중...
+            </div>
           </div>
         </div>
       </section>
@@ -146,26 +177,42 @@ export function BounceAlertsSection({ watchlist }: Props) {
   if (alerts.length === 0) {
     return (
       <section>
-        <div className="flex items-center gap-3 mb-4">
-          <Bell className="w-5 h-5 text-slate-300 dark:text-slate-600" />
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">지지선 반등 알림</h2>
-        </div>
-        <div className="card p-8 text-center">
-          <Bell className="w-10 h-10 text-slate-200 dark:text-slate-700 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-1">
-            현재 지지선 반등 신호가 있는 관심종목이 없습니다
-          </p>
-          <p className="text-xs text-slate-400">
-            관심종목에 담긴 종목 중 반등 조건을 만족하면 여기에 표시됩니다
-          </p>
-          {notificationPermission !== "granted" && (
-            <button
-              onClick={requestNotificationPermission}
-              className="mt-4 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold rounded-lg transition-colors"
-            >
-              🔔 브라우저 알림 허용하기
-            </button>
+        <button
+          onClick={toggleExpanded}
+          className="flex items-center justify-between w-full mb-4 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <Bell className="w-5 h-5 text-slate-300 dark:text-slate-600" />
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">🔔 지지선 반등 알림</h2>
+          </div>
+          {isExpanded ? (
+            <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
           )}
+        </button>
+        <div
+          className={`transition-all duration-300 ease-in-out overflow-hidden ${
+            isExpanded ? "max-h-[10000px] opacity-100" : "max-h-0 opacity-0"
+          }`}
+        >
+          <div className="card p-8 text-center">
+            <Bell className="w-10 h-10 text-slate-200 dark:text-slate-700 mx-auto mb-3" />
+            <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-1">
+              현재 지지선 반등 신호가 있는 관심종목이 없습니다
+            </p>
+            <p className="text-xs text-slate-400">
+              관심종목에 담긴 종목 중 반등 조건을 만족하면 여기에 표시됩니다
+            </p>
+            {notificationPermission !== "granted" && (
+              <button
+                onClick={requestNotificationPermission}
+                className="mt-4 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                🔔 브라우저 알림 허용하기
+              </button>
+            )}
+          </div>
         </div>
       </section>
     );
@@ -173,7 +220,10 @@ export function BounceAlertsSection({ watchlist }: Props) {
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-4">
+      <button
+        onClick={toggleExpanded}
+        className="flex items-center justify-between w-full mb-4 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+      >
         <div className="flex items-center gap-3">
           <Bell className="w-5 h-5 text-yellow-500 fill-current animate-pulse" />
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">🔔 지지선 반등 알림</h2>
@@ -181,26 +231,42 @@ export function BounceAlertsSection({ watchlist }: Props) {
             {alerts.length}
           </span>
         </div>
-        {notificationPermission !== "granted" && (
-          <button
-            onClick={requestNotificationPermission}
-            className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold rounded-lg transition-colors"
-          >
-            알림 켜기
-          </button>
-        )}
-      </div>
+        <div className="flex items-center gap-2">
+          {notificationPermission !== "granted" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                requestNotificationPermission();
+              }}
+              className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold rounded-lg transition-colors"
+            >
+              알림 켜기
+            </button>
+          )}
+          {isExpanded ? (
+            <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+          )}
+        </div>
+      </button>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {alerts.map(({ item, bounce, price, changePercent }) => (
-          <BounceAlertCard
-            key={item.symbol}
-            item={item}
-            bounce={bounce}
-            price={price}
-            changePercent={changePercent}
-          />
-        ))}
+      <div
+        className={`transition-all duration-300 ease-in-out overflow-hidden ${
+          isExpanded ? "max-h-[10000px] opacity-100" : "max-h-0 opacity-0"
+        }`}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {alerts.map(({ item, bounce, price, changePercent }) => (
+            <BounceAlertCard
+              key={item.symbol}
+              item={item}
+              bounce={bounce}
+              price={price}
+              changePercent={changePercent}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );

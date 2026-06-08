@@ -6,6 +6,7 @@ import { ChatInterface } from "@/components/ai-analysis/ChatInterface";
 import { ChatHistory } from "@/components/ai-analysis/ChatHistory";
 import { ChatPDFTemplate } from "@/components/ai-analysis/ChatPDFTemplate";
 import { StockSnapshotPanel } from "@/components/ai-analysis/StockSnapshotPanel";
+import { WatchlistPanel } from "@/components/ai-analysis/WatchlistPanel";
 import { exportElementAsPDF } from "@/lib/pdf-export";
 import { useChat } from "@/hooks/useChat";
 import { History, ChevronLeft, ChevronRight } from "lucide-react";
@@ -118,6 +119,9 @@ export default function AIAnalysisPage() {
             selectedStock={selectedStock}
           />
         </div>
+
+        {/* Watchlist Panel */}
+        <WatchlistPanel />
 
         {/* Live snapshot panel (real-time data above chat) */}
         {selectedStock && (
