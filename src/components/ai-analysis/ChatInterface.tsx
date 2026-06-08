@@ -179,6 +179,7 @@ export function ChatInterface({
                   {new Date(msg.timestamp).toLocaleTimeString("ko-KR", {
                     hour: "2-digit",
                     minute: "2-digit",
+                    timeZone: "Asia/Seoul",
                   })}
                 </p>
               </div>

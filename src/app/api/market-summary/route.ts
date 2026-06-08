@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       lines.push(`- 미국 국채 10년물: ${marketData.tnx} (${marketData.tnxChange ?? "N/A"})`);
     }
 
-    const prompt = `오늘 ${new Date().toLocaleDateString("ko-KR")} 기준 시장 현황을 분석해주세요.
+    const prompt = `오늘 ${new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })} 기준 시장 현황을 분석해주세요.
 
 시장 데이터 (모두 실시간 측정값):
 ${lines.join("\n")}

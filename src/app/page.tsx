@@ -44,8 +44,12 @@ export default async function DashboardPage() {
             <span className="text-sm text-slate-400">
               {now.toLocaleDateString("ko-KR", {
                 year: "numeric", month: "long", day: "numeric", weekday: "short",
+                timeZone: "Asia/Seoul",
               })}{" "}·{" "}
-              {now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 기준
+              {now.toLocaleTimeString("ko-KR", {
+                hour: "2-digit", minute: "2-digit",
+                timeZone: "Asia/Seoul",
+              })} 기준
             </span>
           </div>
         </div>

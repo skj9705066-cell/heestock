@@ -19,6 +19,7 @@ function stripMarkdown(text: string): string {
 export function ChatPDFTemplate({ messages, stockName, stockSymbol }: Props) {
   const today = new Date().toLocaleDateString("ko-KR", {
     year: "numeric", month: "long", day: "numeric",
+    timeZone: "Asia/Seoul",
   });
 
   return (

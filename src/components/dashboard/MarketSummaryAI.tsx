@@ -153,6 +153,7 @@ export function MarketSummaryAI({ indices = [] }: Props) {
           {new Date().toLocaleDateString("ko-KR", {
             year: "numeric", month: "long", day: "numeric",
             hour: "2-digit", minute: "2-digit",
+            timeZone: "Asia/Seoul",
           })} 기준
         </span>
         <span className="text-xs text-slate-300 dark:text-slate-600">claude-sonnet-4-6</span>

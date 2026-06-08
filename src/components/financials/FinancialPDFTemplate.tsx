@@ -77,7 +77,10 @@ export function FinancialPDFTemplate({ data, aiAnalysis }: Props) {
           </div>
           <div style={{ textAlign:"right" }}>
             <p style={{ margin:0, fontSize:11, color:"#94a3b8" }}>
-              생성일: {new Date().toLocaleDateString("ko-KR", { year:"numeric", month:"long", day:"numeric" })}
+              생성일: {new Date().toLocaleDateString("ko-KR", {
+                year:"numeric", month:"long", day:"numeric",
+                timeZone: "Asia/Seoul",
+              })}
             </p>
             <p style={{ margin:"2px 0 0", fontSize:11, color:"#94a3b8" }}>단위: {data.unit}</p>
             <p style={{ margin:"2px 0 0", fontSize:11, color:"#3b82f6", fontWeight:700 }}>

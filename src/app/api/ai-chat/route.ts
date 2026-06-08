@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
       year: "numeric",
       month: "long",
       day: "numeric",
+      timeZone: "Asia/Seoul",
     });
     if (stockSymbol) {
       try {

@@ -56,7 +56,10 @@ async function fetchYahoo(
 
   return timestamps
     .map((ts, i) => ({
-      date:   new Date(ts * 1000).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }),
+      date:   new Date(ts * 1000).toLocaleDateString("ko-KR", {
+        month: "2-digit", day: "2-digit",
+        timeZone: "Asia/Seoul",
+      }),
       open:   q.open[i]   ?? 0,
       high:   q.high[i]   ?? 0,
       low:    q.low[i]    ?? 0,
@@ -102,7 +105,10 @@ async function fetchAlphaVantage(
   return Object.entries(series)
     .slice(0, 250)
     .map(([dateStr, v]) => ({
-      date:   new Date(dateStr).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit" }),
+      date:   new Date(dateStr).toLocaleDateString("ko-KR", {
+        month: "2-digit", day: "2-digit",
+        timeZone: "Asia/Seoul",
+      }),
       open:   parseFloat(v["1. open"]),
       high:   parseFloat(v["2. high"]),
       low:    parseFloat(v["3. low"]),

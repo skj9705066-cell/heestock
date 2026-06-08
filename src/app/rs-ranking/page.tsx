@@ -75,7 +75,10 @@ export default function RSRankingPage() {
         <div className="flex items-center gap-2">
           {fetchedAt && (
             <span className="text-xs text-slate-400">
-              {fetchedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 기준
+              {fetchedAt.toLocaleTimeString("ko-KR", {
+                hour: "2-digit", minute: "2-digit",
+                timeZone: "Asia/Seoul",
+              })} 기준
             </span>
           )}
           <button

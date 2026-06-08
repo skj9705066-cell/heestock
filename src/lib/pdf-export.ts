@@ -103,6 +103,7 @@ export async function generateFinancialPDF(
   );
   const today = new Date().toLocaleDateString("ko-KR", {
     year: "numeric", month: "long", day: "numeric",
+    timeZone: "Asia/Seoul",
   });
   doc.text(`생성일: ${today}`, W - MR, 17, { align: "right" });
   sf(7.5, [186, 210, 255]);

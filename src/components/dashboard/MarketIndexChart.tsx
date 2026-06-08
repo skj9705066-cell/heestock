@@ -289,7 +289,7 @@ export function MarketIndexChart() {
             <Clock className="w-3 h-3 text-slate-400" />
             <span className="text-xs text-slate-400">
               {lastUpdated
-                ? lastUpdated.toLocaleTimeString("ko-KR")
+                ? lastUpdated.toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" })
                 : "로딩 중..."}
             </span>
             {noData && !isLoading && (
