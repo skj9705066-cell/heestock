@@ -2,7 +2,6 @@
 // Used by both /api/stock-snapshot (UI display) and /api/ai-chat (prompt injection).
 
 import {
-  fetchYFQuotes,
   fetchYFKeyStats,
   fetchYFPriceHistory,
   fetchYFFinancials,
@@ -13,7 +12,8 @@ import {
   type YFIncomeRow,
 } from "@/lib/yahoo-finance";
 import { fetchDartKrFinancials } from "@/lib/dart";
-import { fetchKisPrice, fetchKisInvestorFlow, type KisPrice, type KisInvestorDay } from "@/lib/kis";
+import { fetchKisInvestorFlow, fetchKisPrice, type KisInvestorDay, type KisPrice } from "@/lib/kis";
+import { getQuote, type Quote } from "@/lib/quote";
 
 export type Market = "KR" | "US";
 
@@ -458,7 +458,7 @@ async function buildUsFinancials(symbol: string): Promise<SnapshotFinancials | u
 // ── Main entry ──────────────────────────────────────────────────────────────
 
 const _snapshotCache = new Map<string, { data: StockSnapshot; ts: number }>();
-const SNAPSHOT_TTL = 5 * 60_000;
+const SNAPSHOT_TTL = 60_000; // 60초 캐시 (옛 값 방지)
 
 export async function buildStockSnapshot(
   symbol: string,
@@ -476,79 +476,59 @@ export async function buildStockSnapshot(
   const errors: string[] = [];
 
   const stockCode = symbol.replace(/\.(KS|KQ)$/, "");
-  const yfSym = await yfSymbol(stockCode, market);
-
-  // For KR stocks: KIS is the primary source for quote + key stats + 수급.
-  // Yahoo is still used for the 1-year price history chart (KIS daily chart
-  // is paginated and slower). DART remains the source for financials.
   const isKr = market === "KR";
 
-  // KIS rate-limits same-TR back-to-back calls. We sequence the two KIS calls
-  // (different TRs, but a small inter-call gap helps) and fire YF + DART in
-  // parallel alongside.
-  const kisPromise: Promise<{ price: KisPrice | null; flow: KisInvestorDay[] }> = isKr
-    ? (async () => {
-        const price = await fetchKisPrice(stockCode);
-        const flow  = await fetchKisInvestorFlow(stockCode, 5);
-        return { price, flow };
-      })()
-    : Promise.resolve({ price: null, flow: [] });
+  // ── 1. Quote: 단일 getQuote() 함수 사용 ──────────────────────────────────
+  const quotePromise = getQuote(stockCode, market);
 
-  const [qRes, ksRes, histRes, finRes, kisRes] = await Promise.allSettled([
-    fetchYFQuotes([yfSym]).then(arr => arr[0] ?? null),
-    fetchYFKeyStats(yfSym),
-    fetchYFPriceHistory(yfSym, "1y"),
-    isKr ? buildKrFinancials(stockCode) : buildUsFinancials(yfSym),
-    kisPromise,
+  // ── 2. 기타 데이터: 병렬 조회 ──────────────────────────────────────────────
+  const kisFlowPromise = isKr ? fetchKisInvestorFlow(stockCode, 5) : Promise.resolve([]);
+  const kisStatsPromise = isKr ? fetchKisPrice(stockCode) : Promise.resolve(null);
+
+  const [quoteRes, ksRes, histRes, finRes, flowRes, kisStatsRes] = await Promise.allSettled([
+    quotePromise,
+    fetchYFKeyStats(stockCode),
+    fetchYFPriceHistory(stockCode, "1y"),
+    isKr ? buildKrFinancials(stockCode) : buildUsFinancials(stockCode),
+    kisFlowPromise,
+    kisStatsPromise,
   ]);
 
-  const kisBundle = kisRes.status === "fulfilled" ? kisRes.value : { price: null, flow: [] };
-  const kisPrice  = kisBundle.price;
-  const kisFlow   = kisBundle.flow;
-
-  // Quote: prefer KIS (authoritative for KR), fall back to Yahoo
-  const yfQuote  = qRes.status === "fulfilled" ? qRes.value : null;
+  // Quote 결과
+  const quoteData = quoteRes.status === "fulfilled" ? quoteRes.value : null;
   let quote: SnapshotQuote | undefined;
-  let quoteSource = "";
 
-  if (isKr && kisPrice) {
-    // 한국 종목: KIS 단일 소스 사용 (Yahoo 데이터 사용 안 함)
-    quote = buildKrQuoteFromKis(kisPrice);
-    quoteSource = "KIS";
-    console.log(`[stock-snapshot] ${stockCode}: Using KIS data - price=${kisPrice.price}, change=${kisPrice.changePercent.toFixed(2)}%`);
-  } else if (isKr && !kisPrice) {
-    // KIS 실패 시에만 Yahoo 폴백
-    console.warn(`[stock-snapshot] ${stockCode}: KIS failed, attempting Yahoo fallback with symbol: ${yfSym}`);
-    console.log(`[stock-snapshot] ${stockCode}: Yahoo quote data:`, yfQuote ? JSON.stringify(yfQuote).slice(0, 200) : "null");
-    quote = buildQuote(yfQuote, market);
-    quoteSource = "Yahoo (KIS failed)";
-    console.warn(`[stock-snapshot] ${stockCode}: Yahoo fallback ${quote ? "SUCCESS" : "FAILED"} - price=${quote?.price ?? "N/A"}`);
-    errors.push("KIS 시세 조회 실패 (Yahoo 폴백)");
+  if (quoteData) {
+    quote = {
+      price: quoteData.price,
+      change: quoteData.change,
+      changePercent: quoteData.changePercent,
+      volume: quoteData.volume,
+      dayHigh: quoteData.dayHigh,
+      dayLow: quoteData.dayLow,
+      previousClose: quoteData.previousClose,
+      fiftyTwoWeekHigh: quoteData.fiftyTwoWeekHigh,
+      fiftyTwoWeekLow: quoteData.fiftyTwoWeekLow,
+      pricePosition52w: quoteData.fiftyTwoWeekHigh && quoteData.fiftyTwoWeekLow
+        ? pct(((quoteData.price - quoteData.fiftyTwoWeekLow) / (quoteData.fiftyTwoWeekHigh - quoteData.fiftyTwoWeekLow)) * 100)
+        : undefined,
+      marketCap: quoteData.marketCap,
+      currency: quoteData.currency,
+    };
+    console.log(`[stock-snapshot] ${stockCode}: getQuote() success - ${quoteData.source} - price=${quote.price}, change=${quote.changePercent.toFixed(2)}%`);
   } else {
-    // 미국 종목: Yahoo 사용
-    quote = buildQuote(yfQuote, market);
-    quoteSource = "Yahoo";
-  }
-
-  if (!quote) {
     errors.push("실시간 시세 조회 실패");
-    console.error(`[stock-snapshot] ${stockCode}: Failed to get quote from any source`);
+    console.error(`[stock-snapshot] ${stockCode}: getQuote() failed - no data`);
   }
 
-  // Key stats: KIS for KR (단일 소스), Yahoo for US
+  // Key stats: KIS 우선, Yahoo fallback
+  const kisStats = kisStatsRes.status === "fulfilled" ? kisStatsRes.value : null;
   const yfStats = ksRes.status === "fulfilled" ? ksRes.value : null;
   let keyStats: SnapshotKeyStats | undefined;
 
-  if (isKr && kisPrice) {
-    // 한국 종목: KIS만 사용 (Yahoo 데이터 섞지 않음)
-    keyStats = buildKrKeyStatsFromKis(kisPrice);
-    console.log(`[stock-snapshot] ${stockCode}: Using KIS key stats - PER=${kisPrice.per}, PBR=${kisPrice.pbr}`);
-  } else if (isKr && !kisPrice && yfStats) {
-    // KIS 실패 시에만 Yahoo 폴백
-    keyStats = buildKeyStats(yfStats);
-    console.warn(`[stock-snapshot] ${stockCode}: Using Yahoo key stats (KIS failed)`);
-  } else if (!isKr) {
-    // 미국 종목: Yahoo 사용
+  if (isKr && kisStats) {
+    keyStats = buildKrKeyStatsFromKis(kisStats);
+  } else if (yfStats) {
     keyStats = buildKeyStats(yfStats);
   }
 
@@ -562,7 +542,8 @@ export async function buildStockSnapshot(
     errors.push(isKr ? "DART 재무제표 조회 실패" : "Yahoo 재무제표 조회 실패");
   }
 
-  // Investor flow (KR only). Failure isn't fatal — the AI flow doesn't need it.
+  // Investor flow (KR only)
+  const kisFlow = flowRes.status === "fulfilled" ? flowRes.value : [];
   const investorFlow = isKr ? buildInvestorFlow(kisFlow) : undefined;
   if (isKr && !investorFlow) errors.push("수급(외/기/개) 조회 실패");
 
@@ -580,12 +561,8 @@ export async function buildStockSnapshot(
     errors,
   };
 
-  // Only cache full-quality results. For KR stocks we expect KIS to populate
-  // the quote (via kisPrice). If KIS came up empty we likely got rate-limited
-  // — don't cement a Yahoo-only fallback in the 5-min cache; let the next
-  // request try KIS again.
-  const krKisOk = !isKr || kisPrice !== null;
-  if (krKisOk) {
+  // 성공한 결과만 캐시 (TTL 60초)
+  if (quote) {
     _snapshotCache.set(cacheKey, { data: snapshot, ts: Date.now() });
   }
   return snapshot;
