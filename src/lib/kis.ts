@@ -166,7 +166,8 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
 
     if (json.output) {
       const o = json.output;
-      console.log(`[kis] ${code} OUTPUT:`, JSON.stringify({
+      console.log(`[kis] === ${code} 단계별 추적 ===`);
+      console.log(`[kis] 1단계 - KIS RAW 응답:`, JSON.stringify({
         stck_prpr: o.stck_prpr,
         stck_sdpr: o.stck_sdpr,
         prdy_vrss_sign: o.prdy_vrss_sign,
@@ -185,22 +186,26 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
     let price = num(o.stck_prpr) ?? 0;
     const prevClose  = num(o.stck_sdpr) ?? price;
 
+    console.log(`[kis] 2단계 - 파싱 직후: price=${price}, prevClose=${prevClose}`);
+
     // ── 장 마감 후 0원 방지: 실시간 가격이 없으면 일봉에서 당일 종가 가져오기 ───
     if (price === 0 || !price) {
-      console.warn(`[kis] ${code}: stck_prpr is 0 or empty, fetching closing price from daily candles`);
+      console.warn(`[kis] ${code}: ✗ stck_prpr is 0 or empty, fetching closing price from daily candles`);
       try {
         const candles = await fetchKisDailyCandles(code, 1);
         if (candles.length > 0 && candles[candles.length - 1].close > 0) {
           price = candles[candles.length - 1].close;
-          console.log(`[kis] ${code}: Using today's closing price ${price} from daily candles`);
+          console.log(`[kis] ${code}: ✓ Using today's closing price ${price} from daily candles`);
         } else {
-          console.warn(`[kis] ${code}: No valid closing price available - returning null`);
+          console.warn(`[kis] ${code}: ✗ No valid closing price available - returning null`);
           return null;
         }
       } catch (err) {
-        console.error(`[kis] ${code}: Failed to fetch closing price:`, (err as Error).message);
+        console.error(`[kis] ${code}: ✗ Failed to fetch closing price:`, (err as Error).message);
         return null;
       }
+    } else {
+      console.log(`[kis] ${code}: ✓ stck_prpr 정상 (${price}), 종가 fallback 불필요`);
     }
 
     const sign       = num(o.prdy_vrss_sign) ?? 3;
@@ -233,6 +238,9 @@ export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null>
       return null;
     }
     const htsAvls    = num(o.hts_avls); // 단위: 억원
+
+    console.log(`[kis] 3단계 - fetchKisPrice 최종 반환값: price=${price}, change=${change}, changePct=${changePct.toFixed(2)}%`);
+
     return {
       stockCode:        code,
       price,

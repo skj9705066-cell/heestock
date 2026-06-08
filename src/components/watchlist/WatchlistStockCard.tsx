@@ -49,9 +49,9 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
       setLoading(true);
       console.log(`[WatchlistCard] Loading ${item.symbol} (${item.name}) - market: ${item.market}`);
       try {
-        // 브라우저 캐시 완전 무효화: 버전(v=2.1) + timestamp
+        // 브라우저 캐시 완전 무효화: 버전(v=4.0) + timestamp
         const ts = Date.now();
-        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=2.1&_t=${ts}`;
+        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=4.0&_t=${ts}`;
         console.log(`[WatchlistCard] Fetching: ${url}`);
 
         const [snapRes, candleRes] = await Promise.allSettled([
@@ -59,7 +59,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
           }),
-          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=2.1&_t=${ts}`, {
+          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=4.0&_t=${ts}`, {
             cache: "no-store",
           }),
         ]);
@@ -70,13 +70,25 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
 
         if (snapRes.status === "fulfilled" && snapRes.value.ok) {
           const data = await snapRes.value.json();
-          console.log(`[WatchlistCard] ${item.symbol} data.quote:`, data.quote);
-          setQuote({
+          console.log(`[WatchlistCard] === ${item.symbol} 단계별 추적 ===`);
+          console.log(`[WatchlistCard] 3단계 - API 응답 data.quote:`, data.quote);
+
+          if (!data.quote) {
+            console.error(`[WatchlistCard] ✗ ${item.symbol}: data.quote가 없음 - errors:`, data.errors);
+          } else if (data.quote.price === 0 || !data.quote.price) {
+            console.error(`[WatchlistCard] ✗ ${item.symbol}: data.quote.price가 0 또는 빈값:`, data.quote.price);
+          } else {
+            console.log(`[WatchlistCard] ✓ ${item.symbol}: 정상 price=${data.quote.price}`);
+          }
+
+          const newQuote = {
             price:         data.quote?.price         ?? 0,
             changePercent: data.quote?.changePercent ?? 0,
             change:        data.quote?.change        ?? 0,
             currency:      data.quote?.currency      ?? (item.market === "KR" ? "KRW" : "USD"),
-          });
+          };
+          console.log(`[WatchlistCard] 4단계 - setQuote 호출 직전:`, newQuote);
+          setQuote(newQuote);
         } else {
           console.error(`[WatchlistCard] ${item.symbol} fetch FAILED:`, snapRes.status === "fulfilled" ? await snapRes.value.text() : snapRes.reason);
         }
