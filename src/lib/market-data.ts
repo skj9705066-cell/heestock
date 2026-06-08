@@ -71,12 +71,30 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
     for (const sym of symbols) {
       const q = quotes.find(r => r.symbol === sym);
       if (!q?.regularMarketPrice) continue;
+
+      // 등락률 검증: 지수는 ±10% 이상 의심
+      let changePercent = q.regularMarketChangePercent ?? 0;
+      const price = q.regularMarketPrice;
+      const prev = q.regularMarketPreviousClose;
+
+      if (Math.abs(changePercent) > 10 && price > 0 && prev && prev > 0) {
+        const recalcPct = ((price - prev) / prev) * 100;
+        console.warn(
+          `[market-data] ${sym} (${INDEX_SYMBOLS[sym].name}): changePercent=${changePercent.toFixed(2)}% suspicious, ` +
+          `recalc from price/prev → ${recalcPct.toFixed(2)}%`
+        );
+        changePercent = recalcPct;
+      }
+
+      // change도 재계산
+      const change = prev ? price - prev : (q.regularMarketChange ?? 0);
+
       result.push({
         symbol:        sym,
         name:          INDEX_SYMBOLS[sym].name,
-        value:         q.regularMarketPrice,
-        change:        q.regularMarketChange ?? 0,
-        changePercent: q.regularMarketChangePercent ?? 0,
+        value:         price,
+        change:        change,
+        changePercent: changePercent,
         market:        INDEX_SYMBOLS[sym].market,
       });
     }
