@@ -102,12 +102,28 @@ export async function getTopStocks(): Promise<TopStock[]> {
         const rawSym = q.symbol.replace(/\.(KS|KQ)$/, "");
         const meta   = isKR ? KR_POOL[q.symbol] : null;
         const name   = meta?.name ?? q.shortName ?? q.symbol;
+
+        // 등락률 검증 및 재계산
+        let changePercent = q.regularMarketChangePercent ?? 0;
+        const price = q.regularMarketPrice!;
+        const prev = q.regularMarketPreviousClose;
+
+        // 한국 주식 ±30% 제한 검증
+        if (isKR && Math.abs(changePercent) > 30 && price > 0 && prev && prev > 0) {
+          const recalcPct = ((price - prev) / prev) * 100;
+          console.warn(
+            `[market-data] ${q.symbol}: changePercent=${changePercent.toFixed(2)}% suspicious, ` +
+            `recalc → ${recalcPct.toFixed(2)}%`
+          );
+          changePercent = recalcPct;
+        }
+
         return {
           rank:          i + 1,
           symbol:        rawSym,
           name,
-          price:         q.regularMarketPrice!,
-          changePercent: q.regularMarketChangePercent ?? 0,
+          price,
+          changePercent,
           volume:        q.regularMarketVolume!,
           market:        isKR ? ("KR" as const) : ("US" as const),
         };

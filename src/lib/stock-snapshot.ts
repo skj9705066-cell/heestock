@@ -207,7 +207,26 @@ function buildQuote(q: YFQuote | null, market: Market): SnapshotQuote | undefine
   const price = q.regularMarketPrice;
   const prev = q.regularMarketPreviousClose ?? price;
   const change = q.regularMarketChange ?? price - prev;
-  const changePercent = q.regularMarketChangePercent ?? (prev ? (change / prev) * 100 : 0);
+  let changePercent = q.regularMarketChangePercent ?? (prev ? (change / prev) * 100 : 0);
+
+  // 한국 주식 ±30% 제한 검증 + 부호 일치 검증
+  if (market === "KR" && price > 0 && prev > 0) {
+    const recalcPct = ((price - prev) / prev) * 100;
+
+    // 30% 초과 또는 change/changePercent 부호 불일치 시 재계산
+    const signMismatch = (change > 0 && changePercent < -0.01) || (change < 0 && changePercent > 0.01);
+
+    if (Math.abs(changePercent) > 30 || signMismatch) {
+      console.warn(
+        `[yahoo] ${q.symbol}: ` +
+        (Math.abs(changePercent) > 30
+          ? `changePercent=${changePercent.toFixed(2)}% exceeds ±30% limit`
+          : `sign mismatch (change=${change.toFixed(2)}, changePct=${changePercent.toFixed(2)}%)`) +
+        `, recalc → ${recalcPct.toFixed(2)}%`
+      );
+      changePercent = recalcPct;
+    }
+  }
 
   let pricePosition52w: number | undefined;
   if (q.fiftyTwoWeekHigh && q.fiftyTwoWeekLow && q.fiftyTwoWeekHigh > q.fiftyTwoWeekLow) {
