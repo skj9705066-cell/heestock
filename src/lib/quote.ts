@@ -2,7 +2,7 @@
  * 단일 시세 조회 함수 - 모든 화면의 시세 데이터는 이 함수를 통해서만 가져옴
  *
  * 원칙:
- * 1. 한국 종목: KIS API 우선 → 실패 시 Yahoo fallback
+ * 1. 한국 종목: KIS API 단일 소스 (fallback 제거)
  * 2. 미국 종목: Yahoo Finance API
  * 3. changePercent 검증/재계산 한 곳에서만
  * 4. ±30% 초과 또는 부호 불일치 시 재계산, 그래도 이상하면 null 반환
@@ -10,7 +10,7 @@
  */
 
 import { fetchKisPrice, type KisPrice } from "./kis";
-import { fetchYFQuotes, resolveKrYahooSymbol, type YFQuote } from "./yahoo-finance";
+import { fetchYFQuotes, type YFQuote } from "./yahoo-finance";
 
 export interface Quote {
   symbol: string;
@@ -183,9 +183,8 @@ export async function getQuote(symbol: string, market: "KR" | "US"): Promise<Quo
 
   console.log(`[getQuote] ${cleanSymbol} (${market}) - start`);
 
-  // 한국 종목: KIS 우선 → Yahoo fallback
+  // 한국 종목: KIS 단일 소스 (Yahoo fallback 제거)
   if (market === "KR") {
-    // 1. KIS 시도
     try {
       const kis = await fetchKisPrice(cleanSymbol);
       if (kis) {
@@ -200,27 +199,8 @@ export async function getQuote(symbol: string, market: "KR" | "US"): Promise<Quo
       console.error(`[getQuote] ${cleanSymbol}: KIS error:`, (err as Error).message);
     }
 
-    // 2. Yahoo fallback
-    console.warn(`[getQuote] ${cleanSymbol}: KIS failed, trying Yahoo fallback`);
-    try {
-      const yfSymbol = await resolveKrYahooSymbol(cleanSymbol);
-      const yfQuotes = await fetchYFQuotes([yfSymbol]);
-      const yf = yfQuotes[0];
-
-      if (yf) {
-        const quote = normalizeYahooQuote(yf, market);
-        if (quote) {
-          console.log(`[getQuote] ${cleanSymbol}: Yahoo fallback success - price=${quote.price}, change=${quote.changePercent.toFixed(2)}%`);
-          return quote;
-        }
-        console.warn(`[getQuote] ${cleanSymbol}: Yahoo returned data but validation failed`);
-      }
-    } catch (err) {
-      console.error(`[getQuote] ${cleanSymbol}: Yahoo error:`, (err as Error).message);
-    }
-
-    // 둘 다 실패
-    console.error(`[getQuote] ${cleanSymbol}: Both KIS and Yahoo failed`);
+    // KIS 실패 시 null 반환 (fallback 없음)
+    console.error(`[getQuote] ${cleanSymbol}: KIS failed - no fallback for KR stocks`);
     return null;
   }
 

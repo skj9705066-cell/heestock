@@ -1,5 +1,6 @@
-// Higher-level market data using Yahoo Finance only.
+// Higher-level market data using KIS (Korean) + Yahoo Finance (US/International).
 
+import { fetchKisIndexPrice } from "./kis";
 import { fetchYFQuotes, fetchYFPriceHistory, type YFQuote } from "./yahoo-finance";
 import type { MarketIndex, SectorData, MarketVolumePoint } from "@/types/market";
 import type { TopStock } from "@/types/stock";
@@ -63,15 +64,50 @@ const US_POOL: Record<string, string> = {
 
 export async function getMarketIndices(): Promise<MarketIndex[]> {
   try {
-    const symbols = Object.keys(INDEX_SYMBOLS);
-
-    // 각 지수별로 최근 5일 히스토리 가져오기 (정확한 전일종가 확보)
-    const historyPromises = symbols.map(sym => fetchYFPriceHistory(sym, "5d"));
-    const historyResults = await Promise.allSettled(historyPromises);
-
     const result: MarketIndex[] = [];
 
-    symbols.forEach((sym, i) => {
+    // 1. 한국 지수: KIS API (코스피, 코스닥)
+    const [kospiRes, kosdaqRes] = await Promise.allSettled([
+      fetchKisIndexPrice("0001"), // 코스피
+      fetchKisIndexPrice("1001"), // 코스닥
+    ]);
+
+    if (kospiRes.status === "fulfilled" && kospiRes.value) {
+      const k = kospiRes.value;
+      result.push({
+        symbol: "^KS11",
+        name: "코스피",
+        value: Math.round(k.price * 100) / 100,
+        change: Math.round(k.change * 100) / 100,
+        changePercent: Math.round(k.changePercent * 100) / 100,
+        market: "KR",
+      });
+      console.log(`[market-data] 코스피 (KIS): ${k.price.toFixed(2)} / ${k.changePercent.toFixed(2)}%`);
+    } else {
+      console.error("[market-data] 코스피 KIS 조회 실패");
+    }
+
+    if (kosdaqRes.status === "fulfilled" && kosdaqRes.value) {
+      const k = kosdaqRes.value;
+      result.push({
+        symbol: "^KQ11",
+        name: "코스닥",
+        value: Math.round(k.price * 100) / 100,
+        change: Math.round(k.change * 100) / 100,
+        changePercent: Math.round(k.changePercent * 100) / 100,
+        market: "KR",
+      });
+      console.log(`[market-data] 코스닥 (KIS): ${k.price.toFixed(2)} / ${k.changePercent.toFixed(2)}%`);
+    } else {
+      console.error("[market-data] 코스닥 KIS 조회 실패");
+    }
+
+    // 2. 미국 지수: Yahoo Finance (나스닥, S&P500)
+    const usSymbols = ["^IXIC", "^GSPC"];
+    const historyPromises = usSymbols.map(sym => fetchYFPriceHistory(sym, "5d"));
+    const historyResults = await Promise.allSettled(historyPromises);
+
+    usSymbols.forEach((sym, i) => {
       const histRes = historyResults[i];
 
       if (histRes.status === "rejected" || !histRes.value || histRes.value.length < 2) {
@@ -102,12 +138,12 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
       console.log(`  - changePercent: ${changePercent.toFixed(2)}%`);
 
       result.push({
-        symbol:        sym,
-        name:          INDEX_SYMBOLS[sym].name,
-        value:         Math.round(price * 100) / 100,
-        change:        Math.round(change * 100) / 100,
+        symbol: sym,
+        name: INDEX_SYMBOLS[sym].name,
+        value: Math.round(price * 100) / 100,
+        change: Math.round(change * 100) / 100,
         changePercent: Math.round(changePercent * 100) / 100,
-        market:        INDEX_SYMBOLS[sym].market,
+        market: INDEX_SYMBOLS[sym].market,
       });
     });
 

@@ -63,24 +63,16 @@ export async function GET(req: NextRequest) {
   let data: OHLCVPoint[] = [];
 
   if (market === "KR") {
-    // Primary: KIS API (정확한 한국 일봉 데이터)
+    // KIS API 단일 소스 (Yahoo fallback 제거)
     try {
       const kisData = await fetchKisDailyCandles(symbol, days);
       if (kisData.length >= 20) {
         data = kisData;
+      } else {
+        console.warn(`[daily-candles] KIS returned insufficient data: ${kisData.length} candles (need 20+)`);
       }
     } catch (e) {
-      console.warn("[daily-candles] KIS failed:", (e as Error).message);
-    }
-
-    // Fallback: Yahoo Finance with .KS suffix
-    if (data.length < 20) {
-      try {
-        const yfSymbol = symbol.includes(".") ? symbol : `${symbol}.KS`;
-        data = await fetchYahooCandles(yfSymbol, days);
-      } catch (e) {
-        console.warn("[daily-candles] Yahoo KR fallback failed:", (e as Error).message);
-      }
+      console.error("[daily-candles] KIS failed:", (e as Error).message);
     }
   } else {
     // US stocks: Yahoo Finance

@@ -379,3 +379,101 @@ export async function fetchKisDailyCandles(
     return [];
   }
 }
+
+// ── Index price (FHPUP02100000) — 코스피/코스닥 지수 현재가 ─────────────────
+
+export interface KisIndexPrice {
+  indexCode: string; // "0001" (코스피) or "1001" (코스닥)
+  indexName: string;
+  price: number;
+  previousClose: number;
+  change: number;
+  changePercent: number;
+  volume?: number;
+  tradingValue?: number;
+}
+
+interface InquireIndexPriceResp {
+  rt_cd: string;
+  msg1?: string;
+  output: {
+    bstp_nmix_prpr: string; // 지수 현재가
+    bstp_nmix_prdy_vrss: string; // 전일대비
+    prdy_vrss_sign: string; // 전일대비 부호
+    bstp_nmix_prdy_ctrt: string; // 전일대비율
+    acml_vol: string; // 누적 거래량
+    acml_tr_pbmn: string; // 누적 거래대금
+    bstp_nmix_oprc: string; // 시가
+    bstp_nmix_hgpr: string; // 고가
+    bstp_nmix_lwpr: string; // 저가
+  };
+}
+
+export async function fetchKisIndexPrice(
+  indexCode: "0001" | "1001"
+): Promise<KisIndexPrice | null> {
+  try {
+    const indexName = indexCode === "0001" ? "코스피" : "코스닥";
+
+    console.log(`[kis] fetchKisIndexPrice START`);
+    console.log(`[kis]   - indexCode: ${indexCode} (${indexName})`);
+    console.log(`[kis]   - TR: FHPUP02100000`);
+
+    const json = await callKis<InquireIndexPriceResp>(
+      "/uapi/domestic-stock/v1/quotations/inquire-index-price",
+      {
+        FID_COND_MRKT_DIV_CODE: "U",
+        FID_INPUT_ISCD: indexCode,
+      },
+      { trId: "FHPUP02100000" }
+    );
+
+    console.log(`[kis] ${indexName} RAW RESPONSE:`);
+    console.log(`[kis]   - rt_cd: ${json.rt_cd}`);
+    console.log(`[kis]   - msg1: ${json.msg1 ?? "N/A"}`);
+    console.log(`[kis]   - has_output: ${!!json.output}`);
+
+    if (json.rt_cd !== "0" || !json.output) {
+      console.warn(`[kis] inquire-index-price ${indexCode} FAILED: rt_cd=${json.rt_cd}, msg1=${json.msg1}`);
+      return null;
+    }
+
+    const o = json.output;
+    console.log(`[kis] ${indexName} OUTPUT:`, JSON.stringify({
+      bstp_nmix_prpr: o.bstp_nmix_prpr,
+      bstp_nmix_prdy_vrss: o.bstp_nmix_prdy_vrss,
+      prdy_vrss_sign: o.prdy_vrss_sign,
+      bstp_nmix_prdy_ctrt: o.bstp_nmix_prdy_ctrt,
+    }));
+
+    const price = num(o.bstp_nmix_prpr) ?? 0;
+    const sign = num(o.prdy_vrss_sign) ?? 3;
+    const rawChange = num(o.bstp_nmix_prdy_vrss) ?? 0;
+    const change = (sign === 4 || sign === 5) ? -Math.abs(rawChange) : Math.abs(rawChange);
+    const rawPct = num(o.bstp_nmix_prdy_ctrt) ?? 0;
+    const changePercent = (sign === 4 || sign === 5) ? -Math.abs(rawPct) : Math.abs(rawPct);
+
+    // 전일종가 = 현재가 - 전일대비
+    const previousClose = price - change;
+
+    console.log(`[kis] ${indexName} RESULT:`);
+    console.log(`[kis]   - price: ${price.toFixed(2)}`);
+    console.log(`[kis]   - previousClose: ${previousClose.toFixed(2)}`);
+    console.log(`[kis]   - change: ${change.toFixed(2)}`);
+    console.log(`[kis]   - changePercent: ${changePercent.toFixed(2)}%`);
+
+    return {
+      indexCode,
+      indexName,
+      price,
+      previousClose,
+      change,
+      changePercent,
+      volume: num(o.acml_vol),
+      tradingValue: num(o.acml_tr_pbmn),
+    };
+  } catch (err) {
+    console.error(`[kis] inquire-index-price failed for ${indexCode}:`, (err as Error).message);
+    return null;
+  }
+}
