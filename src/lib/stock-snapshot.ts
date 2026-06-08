@@ -518,9 +518,11 @@ export async function buildStockSnapshot(
     console.log(`[stock-snapshot] ${stockCode}: Using KIS data - price=${kisPrice.price}, change=${kisPrice.changePercent.toFixed(2)}%`);
   } else if (isKr && !kisPrice) {
     // KIS 실패 시에만 Yahoo 폴백
+    console.warn(`[stock-snapshot] ${stockCode}: KIS failed, attempting Yahoo fallback with symbol: ${yfSym}`);
+    console.log(`[stock-snapshot] ${stockCode}: Yahoo quote data:`, yfQuote ? JSON.stringify(yfQuote).slice(0, 200) : "null");
     quote = buildQuote(yfQuote, market);
     quoteSource = "Yahoo (KIS failed)";
-    console.warn(`[stock-snapshot] ${stockCode}: KIS failed, fallback to Yahoo`);
+    console.warn(`[stock-snapshot] ${stockCode}: Yahoo fallback ${quote ? "SUCCESS" : "FAILED"} - price=${quote?.price ?? "N/A"}`);
     errors.push("KIS 시세 조회 실패 (Yahoo 폴백)");
   } else {
     // 미국 종목: Yahoo 사용

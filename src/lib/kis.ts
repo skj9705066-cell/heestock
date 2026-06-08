@@ -146,13 +146,18 @@ interface InquirePriceResp {
 export async function fetchKisPrice(stockCode: string): Promise<KisPrice | null> {
   try {
     const code = stockCode.replace(/\.(KS|KQ)$/, "");
+    console.log(`[kis] fetchKisPrice called for: ${stockCode} → cleaned: ${code}`);
+
     const json = await callKis<InquirePriceResp>(
       "/uapi/domestic-stock/v1/quotations/inquire-price",
       { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code },
       { trId: "FHKST01010100" },
     );
+
+    console.log(`[kis] ${code} response - rt_cd: ${json.rt_cd}, msg1: ${json.msg1}, has_output: ${!!json.output}`);
+
     if (json.rt_cd !== "0" || !json.output) {
-      console.warn(`[kis] inquire-price ${code}: ${json.msg1 ?? "no data"}`);
+      console.warn(`[kis] inquire-price ${code} FAILED: rt_cd=${json.rt_cd}, msg1=${json.msg1}`);
       return null;
     }
     const o = json.output;
