@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Star, ChevronDown, ChevronUp } from "lucide-react";
+import { Star, ChevronDown, ChevronUp, Plus } from "lucide-react";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { WatchlistStockCard } from "./WatchlistStockCard";
+import { AddWatchlistModal } from "./AddWatchlistModal";
 
 export function WatchlistSection() {
   const { watchlist, remove, hydrated } = useWatchlist();
   const [isExpanded, setIsExpanded] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // Load expansion state from localStorage
   useEffect(() => {
@@ -27,25 +29,35 @@ export function WatchlistSection() {
 
   return (
     <section>
-      <button
-        onClick={toggleExpanded}
-        className="flex items-center justify-between w-full mb-4 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
-      >
-        <div className="flex items-center gap-3">
-          <Star className="w-5 h-5 text-yellow-400 fill-current" />
-          <h2 className="text-lg font-bold text-slate-900 dark:text-white">관심종목</h2>
-          {watchlist.length > 0 && (
-            <span className="text-sm text-slate-400">({watchlist.length})</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {isExpanded ? (
-            <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
-          ) : (
-            <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
-          )}
-        </div>
-      </button>
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={toggleExpanded}
+          className="flex-1 flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <Star className="w-5 h-5 text-yellow-400 fill-current" />
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">관심종목</h2>
+            {watchlist.length > 0 && (
+              <span className="text-sm text-slate-400">({watchlist.length})</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {isExpanded ? (
+              <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors" />
+            )}
+          </div>
+        </button>
+
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-2 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-colors shadow-sm hover:shadow-md flex-shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="hidden sm:inline">추가</span>
+        </button>
+      </div>
 
       <div
         className={`transition-all duration-300 ease-in-out overflow-hidden ${
@@ -74,6 +86,8 @@ export function WatchlistSection() {
           </div>
         )}
       </div>
+
+      <AddWatchlistModal isOpen={showAddModal} onClose={() => setShowAddModal(false)} />
     </section>
   );
 }

@@ -61,8 +61,13 @@ export function BounceAlertsSection({ watchlist }: Props) {
         watchlist.map(async (item) => {
           try {
             const [snapRes, candleRes] = await Promise.allSettled([
-              fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}`),
-              fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130`),
+              fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}`, {
+                cache: "no-store",
+                headers: { "Cache-Control": "no-cache" },
+              }),
+              fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130`, {
+                cache: "no-store",
+              }),
             ]);
 
             if (cancelled) return;

@@ -49,8 +49,13 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
       setLoading(true);
       try {
         const [snapRes, candleRes] = await Promise.allSettled([
-          fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}`),
-          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130`),
+          fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          }),
+          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130`, {
+            cache: "no-store",
+          }),
         ]);
 
         if (cancelled) return;

@@ -1,6 +1,7 @@
 {
   "name": "희스탁 HeeStock",
   "short_name": "희스탁",
+  "version": "1.1.0",
   "description": "AI 기반 한국·미국 주식 종합 분석 플랫폼. Claude AI를 활용한 실시간 종목 분석.",
   "start_url": "/",
   "scope": "/",
