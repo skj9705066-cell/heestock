@@ -88,6 +88,12 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
             currency:      data.quote?.currency      ?? (item.market === "KR" ? "KRW" : "USD"),
           };
           console.log(`[WatchlistCard] 4단계 - setQuote 호출 직전:`, newQuote);
+
+          // 0원이면 캐시 문제 경고
+          if (newQuote.price === 0 && !data.errors?.includes("실시간 시세 조회 실패")) {
+            console.warn(`[WatchlistCard] ⚠️ ${item.symbol}: 0원 표시! 브라우저 캐시 문제일 수 있습니다. Ctrl+Shift+R로 하드 리프레시를 권장합니다.`);
+          }
+
           setQuote(newQuote);
         } else {
           console.error(`[WatchlistCard] ${item.symbol} fetch FAILED:`, snapRes.status === "fulfilled" ? await snapRes.value.text() : snapRes.reason);
