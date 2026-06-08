@@ -48,12 +48,14 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
     async function load() {
       setLoading(true);
       try {
+        // 브라우저 캐시 강제 무효화: timestamp 쿼리 파라미터 추가
+        const ts = Date.now();
         const [snapRes, candleRes] = await Promise.allSettled([
-          fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}`, {
+          fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&_t=${ts}`, {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
           }),
-          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130`, {
+          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&_t=${ts}`, {
             cache: "no-store",
           }),
         ]);
