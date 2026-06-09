@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { cn, formatPercent } from "@/lib/utils";
 import { WatchlistItem } from "@/lib/watchlist";
 import { calcSupportLevels, detectBounce, type OHLCVPoint, type SupportLevel } from "@/lib/support-levels";
+import { enqueue } from "@/lib/request-queue";
 
 interface QuoteData {
   price:         number;
@@ -41,6 +42,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
   const [candles,  setCandles]  = useState<OHLCVPoint[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // 종목코드 정규화 + market 강제 재판별:
   // localStorage의 market 값이 오염(KR 종목인데 "US")돼 있어도, 6자리 숫자 코드면
@@ -58,17 +60,16 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
       if (attempt === 0) setLoading(true);
       try {
         const ts = Date.now();
-        const url = `/api/stock-snapshot?symbol=${symbol}&market=${market}&v=2.0&_t=${ts}`;
+        const snapUrl = `/api/stock-snapshot?symbol=${symbol}&market=${market}&v=2.0&_t=${ts}`;
+        const candUrl = `/api/daily-candles?symbol=${symbol}&market=${market}&days=130&v=2.0&_t=${ts}`;
 
-        const [snapRes, candleRes] = await Promise.allSettled([
-          fetch(url, {
-            cache: "no-store",
-            headers: { "Cache-Control": "no-cache" },
-          }),
-          fetch(`/api/daily-candles?symbol=${symbol}&market=${market}&days=130&v=2.0&_t=${ts}`, {
-            cache: "no-store",
-          }),
-        ]);
+        // 전역 큐로 통과 → 모든 카드 합쳐 한 번에 하나씩, 간격을 두고 호출.
+        // 동시 발사로 KIS 초당 제한에 걸리던 문제를 제거한다. 시세를 먼저 큐에 넣어 우선 처리.
+        const snapPromise = enqueue(() =>
+          fetch(snapUrl, { cache: "no-store", headers: { "Cache-Control": "no-cache" } }),
+        );
+        const candPromise = enqueue(() => fetch(candUrl, { cache: "no-store" }));
+        const [snapRes, candleRes] = await Promise.allSettled([snapPromise, candPromise]);
 
         if (cancelled) return;
 
@@ -94,9 +95,10 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
 
         if (priceOk) { setLoading(false); return; }
 
-        // 빈 응답(장 마감 직후 등 일시적)일 수 있음 → 1회 자동 재시도
-        if (attempt < 1) {
-          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1500);
+        // 200이지만 quote 누락(=KIS 일시 제한/빈 응답) → 큐를 통해 재시도(최대 2회).
+        // 재시도도 큐로 직렬화되므로 첫 폭주가 가신 뒤 호출돼 대부분 성공한다.
+        if (attempt < 2) {
+          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1200);
           return;
         }
         // 재시도 후에도 실패 → 0원 대신 명확한 실패 표시
@@ -105,8 +107,8 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
       } catch (e) {
         if (cancelled) return;
         console.warn("[WatchlistStockCard] load failed:", e);
-        if (attempt < 1) {
-          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1500);
+        if (attempt < 2) {
+          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1200);
           return;
         }
         setQuote(null);
@@ -116,7 +118,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
 
     load(0);
     return () => { cancelled = true; };
-  }, [symbol, market]);
+  }, [symbol, market, reloadKey]);
 
   const currentPrice = quote?.price ?? 0;
 
@@ -177,7 +179,14 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
                 </span>
               </>
             ) : (
-              <span className="text-sm text-slate-400">가격 불러오기 실패</span>
+              <button
+                onClick={() => setReloadKey(k => k + 1)}
+                className="flex items-center gap-1.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
+                title="다시 시도"
+              >
+                <span>시세 불러오기 실패</span>
+                <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-xs">다시 시도 ↻</span>
+              </button>
             )}
           </div>
           <p className="text-xs text-slate-400 mt-1 font-mono">{symbol} · {market}</p>

@@ -5,6 +5,7 @@ import { Bell, TrendingUp, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn, formatPercent } from "@/lib/utils";
 import { WatchlistItem } from "@/lib/watchlist";
 import { calcSupportLevels, detectBounce, type OHLCVPoint, type BounceSignal } from "@/lib/support-levels";
+import { enqueue } from "@/lib/request-queue";
 import toast from "react-hot-toast";
 
 interface BounceAlert {
@@ -60,16 +61,25 @@ export function BounceAlertsSection({ watchlist }: Props) {
       await Promise.all(
         watchlist.map(async (item) => {
           try {
+            // 종목코드 정규화 + market 강제 재판별 (localStorage 오염 무시, 6자리=KR)
+            const sym = String(item.symbol).replace(/\.(KS|KQ)$/i, "");
+            const mkt: "KR" | "US" = /^\d{6}$/.test(sym) ? "KR" : item.market;
+
             // 브라우저 캐시 완전 무효화: 버전(v=2.1) + timestamp
             const ts = Date.now();
+            // 전역 큐로 직렬화 → 관심종목 카드와 합쳐 KIS 동시 호출 폭주를 막는다.
             const [snapRes, candleRes] = await Promise.allSettled([
-              fetch(`/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=2.1&_t=${ts}`, {
-                cache: "no-store",
-                headers: { "Cache-Control": "no-cache" },
-              }),
-              fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=2.1&_t=${ts}`, {
-                cache: "no-store",
-              }),
+              enqueue(() =>
+                fetch(`/api/stock-snapshot?symbol=${sym}&market=${mkt}&v=2.1&_t=${ts}`, {
+                  cache: "no-store",
+                  headers: { "Cache-Control": "no-cache" },
+                }),
+              ),
+              enqueue(() =>
+                fetch(`/api/daily-candles?symbol=${sym}&market=${mkt}&days=130&v=2.1&_t=${ts}`, {
+                  cache: "no-store",
+                }),
+              ),
             ]);
 
             if (cancelled) return;
