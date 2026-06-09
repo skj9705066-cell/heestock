@@ -1,6 +1,7 @@
 // Higher-level market data using KIS (Korean) + Yahoo Finance (US/International).
 
 import { fetchKisIndexPrice } from "./kis";
+import { getQuotes } from "./quote";
 import { fetchYFQuotes, fetchYFPriceHistory, type YFQuote } from "./yahoo-finance";
 import type { MarketIndex, SectorData, MarketVolumePoint } from "@/types/market";
 import type { TopStock } from "@/types/stock";
@@ -178,6 +179,23 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
   }
 }
 
+// ── KR 종목 등락률 KIS 보정 ────────────────────────────────────────────────
+// Yahoo는 KR 전일종가를 잘못 줄 때가 있어(반등/폭락 다음날 등) 등락률이 틀린다.
+// 한국 종목 등락률·가격은 KIS(앱 전체의 정답 소스)로 덮어쓴다. TopStocks/Sectors가
+// 공유하며 60초 캐시 → KIS 토큰 공유와 함께 호출 폭증을 막는다.
+let _krQuoteCache: { map: Map<string, { price: number; changePercent: number }>; ts: number } | null = null;
+const KR_QUOTE_TTL = 60_000;
+
+async function getKrQuoteMap(): Promise<Map<string, { price: number; changePercent: number }>> {
+  if (_krQuoteCache && Date.now() - _krQuoteCache.ts < KR_QUOTE_TTL) return _krQuoteCache.map;
+  const symbols = Object.keys(KR_POOL).map(s => s.replace(/\.(KS|KQ)$/, ""));
+  const quotes = await getQuotes(symbols.map(symbol => ({ symbol, market: "KR" as const })));
+  const map = new Map<string, { price: number; changePercent: number }>();
+  for (const [sym, q] of quotes) map.set(sym, { price: q.price, changePercent: q.changePercent });
+  if (map.size > 0) _krQuoteCache = { map, ts: Date.now() };
+  return map;
+}
+
 // ── Top Stocks ────────────────────────────────────────────────────────────────
 
 export async function getTopStocks(): Promise<TopStock[]> {
@@ -228,7 +246,15 @@ export async function getTopStocks(): Promise<TopStock[]> {
       .slice(0, 10)
       .map((s, i) => ({ ...s, rank: i + 1 }));
 
-    return stocks;
+    // 한국 종목 등락률·가격은 KIS 값으로 보정 (Yahoo 전일종가 오류 방지)
+    const krMap = await getKrQuoteMap();
+    const fixed = stocks.map(s => {
+      if (s.market !== "KR") return s;
+      const k = krMap.get(s.symbol);
+      return k ? { ...s, price: k.price, changePercent: k.changePercent } : s;
+    });
+
+    return fixed;
   } catch {
     return [];
   }
@@ -244,16 +270,19 @@ const SECTOR_ORDER = [
 export async function getSectors(): Promise<SectorData[]> {
   try {
     const symbols = Object.keys(KR_POOL);
-    const quotes  = await fetchYFQuotes(symbols);
+    const [quotes, krMap] = await Promise.all([fetchYFQuotes(symbols), getKrQuoteMap()]);
 
     // Group by sector, calculate avg changePercent and total volume
+    // 등락률은 KIS 보정값 우선 사용(없으면 Yahoo 폴백). 거래량/시총은 Yahoo.
     const sectorMap = new Map<string, { changes: number[]; volume: number; cap: number }>();
     for (const q of quotes) {
       if (!q.regularMarketPrice || !q.symbol) continue;
       const meta = KR_POOL[q.symbol];
       if (!meta) continue;
       const bucket = sectorMap.get(meta.sector) ?? { changes: [], volume: 0, cap: 0 };
-      if (q.regularMarketChangePercent !== undefined) bucket.changes.push(q.regularMarketChangePercent);
+      const kisPct = krMap.get(q.symbol.replace(/\.(KS|KQ)$/, ""))?.changePercent;
+      const chPct  = kisPct ?? q.regularMarketChangePercent;
+      if (chPct !== undefined) bucket.changes.push(chPct);
       bucket.volume += q.regularMarketVolume ?? 0;
       bucket.cap    += q.marketCap ?? 0;
       sectorMap.set(meta.sector, bucket);
