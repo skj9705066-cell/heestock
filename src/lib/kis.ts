@@ -15,9 +15,28 @@ function appSecret(): string { return process.env.KIS_APP_SECRET ?? ""; }
 let _token: { value: string; expiresAt: number } | null = null;
 let _tokenPromise: Promise<string> | null = null;
 
+// 외부에서 주입한 "공유 토큰"(모든 서버리스 인스턴스 공통).
+// KIS 토큰 발급은 앱키당 "1분당 1회"(EGW00133)라, 인스턴스마다 각자 발급하면
+// 콜드스타트가 몰릴 때 대부분 실패한다. 그래서 GitHub Actions가 주기적으로 토큰을
+// 발급해 Vercel 환경변수(KIS_ACCESS_TOKEN/_EXP)에 넣어두고, 런타임은 그걸 그대로
+// 쓴다 → 인스턴스 수와 무관하게 발급은 외부에서 하루 1회만 일어난다.
+function envSharedToken(): string | null {
+  const v = process.env.KIS_ACCESS_TOKEN;
+  const exp = process.env.KIS_ACCESS_TOKEN_EXP;
+  if (!v || !exp) return null;
+  const expiresAt = /^\d+$/.test(exp) ? Number(exp) : Date.parse(exp);
+  // 만료 5분 전까지만 신뢰 (경계 레이스 방지).
+  if (!Number.isFinite(expiresAt) || expiresAt - Date.now() < 5 * 60_000) return null;
+  return v;
+}
+
 async function getToken(): Promise<string> {
+  // 0) 외부 주입 공유 토큰이 유효하면 최우선 사용 — 인스턴스별 발급 자체를 안 한다.
+  const shared = envSharedToken();
+  if (shared) return shared;
+
   // KIS 접근토큰은 24h 유효하지만 발급은 "1분당 1회"(EGW00133)로 제한된다.
-  // 따라서 발급 횟수를 최소화: 만료 30분 전까지는 기존 토큰을 그대로 재사용한다.
+  // (공유 토큰이 없을 때의 폴백) 발급 횟수 최소화: 만료 30분 전까지 기존 토큰 재사용.
   if (_token && _token.expiresAt - Date.now() > 30 * 60_000) return _token.value;
   if (_tokenPromise) return _tokenPromise;
 
