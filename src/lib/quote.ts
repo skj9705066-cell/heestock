@@ -78,22 +78,9 @@ function validateQuote(
 function normalizeKisQuote(kis: KisPrice, stockCode: string): Quote | null {
   const { price, previousClose, change, changePercent } = kis;
 
-  // changePercent 재계산 (KIS가 잘못된 값 주는 경우 대비)
-  let recalcPct = changePercent;
-  if (price > 0 && previousClose > 0) {
-    recalcPct = ((price - previousClose) / previousClose) * 100;
-
-    // ±30% 초과 또는 부호 불일치 시 경고
-    if (Math.abs(changePercent) > 30 || Math.abs(recalcPct - changePercent) > 1) {
-      console.warn(
-        `[quote] KIS ${stockCode}: original changePct=${changePercent.toFixed(2)}%, ` +
-        `recalc=${recalcPct.toFixed(2)}%`
-      );
-    }
-  }
-
-  // 검증
-  if (!validateQuote(price, previousClose, change, recalcPct, `KIS ${stockCode}`)) {
+  // 등락률은 KIS 제공값(prdy_ctrt)을 그대로 신뢰한다. 가격/전일종가로 재계산하지 않음
+  // — 재계산이 기준가 혼선·종가 fallback 시 부호 뒤집힘/폭 축소 버그를 유발했음.
+  if (!validateQuote(price, previousClose, change, changePercent, `KIS ${stockCode}`)) {
     return null;
   }
 
@@ -101,7 +88,7 @@ function normalizeKisQuote(kis: KisPrice, stockCode: string): Quote | null {
     symbol: stockCode,
     price,
     change: Math.round(change * 100) / 100,
-    changePercent: Math.round(recalcPct * 100) / 100,
+    changePercent: Math.round(changePercent * 100) / 100,
     previousClose,
     volume: kis.volume,
     dayHigh: kis.dayHigh,
