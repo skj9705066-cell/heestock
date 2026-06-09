@@ -16,8 +16,9 @@ let _token: { value: string; expiresAt: number } | null = null;
 let _tokenPromise: Promise<string> | null = null;
 
 async function getToken(): Promise<string> {
-  // Refresh ~1 h before expiry to avoid edge-of-expiry races.
-  if (_token && _token.expiresAt - Date.now() > 60 * 60_000) return _token.value;
+  // KIS 접근토큰은 24h 유효하지만 발급은 "1분당 1회"(EGW00133)로 제한된다.
+  // 따라서 발급 횟수를 최소화: 만료 30분 전까지는 기존 토큰을 그대로 재사용한다.
+  if (_token && _token.expiresAt - Date.now() > 30 * 60_000) return _token.value;
   if (_tokenPromise) return _tokenPromise;
 
   if (!appKey() || !appSecret()) {
@@ -39,6 +40,12 @@ async function getToken(): Promise<string> {
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
+      // 발급 실패(특히 EGW00133: 1분당 1회) 시, 아직 유효한 기존 토큰이 있으면
+      // 그것을 계속 사용한다. 갱신 윈도에서의 일시 실패가 시세 조회를 깨지 않게 한다.
+      if (_token && _token.expiresAt - Date.now() > 0) {
+        console.warn(`[kis] token refresh failed (status ${res.status}) → 유효한 기존 토큰 재사용`);
+        return _token.value;
+      }
       const errMsg = `KIS oauth2 failed - status: ${res.status}, response: ${txt.slice(0, 200)}`;
       console.error(`[kis] ${errMsg}`);
       throw new Error(errMsg);

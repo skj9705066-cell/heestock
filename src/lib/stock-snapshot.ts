@@ -422,8 +422,13 @@ async function buildUsFinancials(symbol: string): Promise<SnapshotFinancials | u
 // ── Main entry ──────────────────────────────────────────────────────────────
 
 const _snapshotCache = new Map<string, { data: StockSnapshot; ts: number }>();
-const SNAPSHOT_TTL = 60_000; // 60초 캐시 (옛 값 방지)
+// 장중 신선도를 위해 짧게(30초). TTL 내 동일 종목 요청은 KIS를 다시 부르지 않고
+// 캐시값을 반환 → 여러 사용자가 동시 접속해도 KIS 호출이 종목당 30초에 1회로 수렴.
+const SNAPSHOT_TTL = 30_000;
 const STALE_OK_TTL = 6 * 60 * 60_000; // 6시간 (일시 빈 응답 시 오래된 캐시 허용)
+
+// 진행 중 조회를 종목별로 공유해 캐시 스탬피드를 막는다(같은 종목 동시요청 → KIS 1회).
+const _inflight = new Map<string, Promise<StockSnapshot>>();
 
 export async function buildStockSnapshot(
   symbol: string,
@@ -432,8 +437,32 @@ export async function buildStockSnapshot(
 ): Promise<StockSnapshot> {
   const market = detectMarket(symbol, marketHint);
   const cacheKey = `${symbol}|${market}`;
+
+  // 1) 신선한 캐시(TTL 내)면 즉시 반환 — KIS 재호출 없음.
   const hit = _snapshotCache.get(cacheKey);
   if (hit && Date.now() - hit.ts < SNAPSHOT_TTL) return hit.data;
+
+  // 2) 같은 종목이 이미 조회 중이면 그 Promise를 공유(스탬피드 방지).
+  const pending = _inflight.get(cacheKey);
+  if (pending) return pending;
+
+  // 3) 신규 조회 시작 — 진행 중 Promise를 등록하고 끝나면 정리.
+  const job = buildSnapshotUncached(symbol, name, market, cacheKey, hit);
+  _inflight.set(cacheKey, job);
+  try {
+    return await job;
+  } finally {
+    _inflight.delete(cacheKey);
+  }
+}
+
+async function buildSnapshotUncached(
+  symbol: string,
+  name: string,
+  market: Market,
+  cacheKey: string,
+  hit: { data: StockSnapshot; ts: number } | undefined,
+): Promise<StockSnapshot> {
 
   const now = new Date();
   const asOfDate = now.toISOString().slice(0, 10);
