@@ -183,17 +183,34 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
 // Yahoo는 KR 전일종가를 잘못 줄 때가 있어(반등/폭락 다음날 등) 등락률이 틀린다.
 // 한국 종목 등락률·가격은 KIS(앱 전체의 정답 소스)로 덮어쓴다. TopStocks/Sectors가
 // 공유하며 60초 캐시 → KIS 토큰 공유와 함께 호출 폭증을 막는다.
-let _krQuoteCache: { map: Map<string, { price: number; changePercent: number }>; ts: number } | null = null;
+type KrQuoteMap = Map<string, { price: number; changePercent: number }>;
+let _krQuoteCache: { map: KrQuoteMap; ts: number } | null = null;
+let _krQuotePromise: Promise<KrQuoteMap> | null = null;
 const KR_QUOTE_TTL = 60_000;
 
-async function getKrQuoteMap(): Promise<Map<string, { price: number; changePercent: number }>> {
+async function getKrQuoteMap(): Promise<KrQuoteMap> {
   if (_krQuoteCache && Date.now() - _krQuoteCache.ts < KR_QUOTE_TTL) return _krQuoteCache.map;
-  const symbols = Object.keys(KR_POOL).map(s => s.replace(/\.(KS|KQ)$/, ""));
-  const quotes = await getQuotes(symbols.map(symbol => ({ symbol, market: "KR" as const })));
-  const map = new Map<string, { price: number; changePercent: number }>();
-  for (const [sym, q] of quotes) map.set(sym, { price: q.price, changePercent: q.changePercent });
-  if (map.size > 0) _krQuoteCache = { map, ts: Date.now() };
-  return map;
+  // 동시 호출(TopStocks+Sectors)이 각자 안 부르도록 진행 중 Promise를 공유.
+  if (_krQuotePromise) return _krQuotePromise;
+
+  _krQuotePromise = (async () => {
+    const symbols = Object.keys(KR_POOL).map(s => s.replace(/\.(KS|KQ)$/, ""));
+    const map: KrQuoteMap = new Map();
+    // 전 종목을 한꺼번에 병렬로 부르면 KIS 초당 제한에 일부가 드롭된다.
+    // 배치(6)로 나눠 간격을 두고 호출해 누락 없이 받는다.
+    const BATCH = 6;
+    for (let i = 0; i < symbols.length; i += BATCH) {
+      const chunk = symbols.slice(i, i + BATCH);
+      const quotes = await getQuotes(chunk.map(symbol => ({ symbol, market: "KR" as const })));
+      for (const [sym, q] of quotes) map.set(sym, { price: q.price, changePercent: q.changePercent });
+      if (i + BATCH < symbols.length) await new Promise(r => setTimeout(r, 250));
+    }
+    // 대부분 받았을 때만 캐시(부분 실패한 빈약한 결과를 60초간 고정하지 않도록).
+    if (map.size >= symbols.length * 0.7) _krQuoteCache = { map, ts: Date.now() };
+    return map;
+  })().finally(() => { _krQuotePromise = null; });
+
+  return _krQuotePromise;
 }
 
 // ── Top Stocks ────────────────────────────────────────────────────────────────
