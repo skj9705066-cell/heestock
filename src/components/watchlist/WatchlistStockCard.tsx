@@ -47,56 +47,31 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
 
     async function load() {
       setLoading(true);
-      console.log(`[WatchlistCard] Loading ${item.symbol} (${item.name}) - market: ${item.market}`);
       try {
-        // 브라우저 캐시 완전 무효화: 버전 + timestamp
         const ts = Date.now();
-        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=final&_t=${ts}`;
-        console.log(`[WatchlistCard] Fetching: ${url}`);
+        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=2.0&_t=${ts}`;
 
         const [snapRes, candleRes] = await Promise.allSettled([
           fetch(url, {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
           }),
-          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=final&_t=${ts}`, {
+          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=2.0&_t=${ts}`, {
             cache: "no-store",
           }),
         ]);
 
         if (cancelled) return;
 
-        console.log(`[WatchlistCard] ${item.symbol} snapshot response:`, snapRes.status, snapRes.status === "fulfilled" ? snapRes.value.status : "N/A");
-
         if (snapRes.status === "fulfilled" && snapRes.value.ok) {
           const data = await snapRes.value.json();
-          console.log(`[WatchlistCard] === ${item.symbol} 단계별 추적 ===`);
-          console.log(`[WatchlistCard] 3단계 - API 응답 data.quote:`, data.quote);
-
-          if (!data.quote) {
-            console.error(`[WatchlistCard] ✗ ${item.symbol}: data.quote가 없음 - errors:`, data.errors);
-          } else if (data.quote.price === 0 || !data.quote.price) {
-            console.error(`[WatchlistCard] ✗ ${item.symbol}: data.quote.price가 0 또는 빈값:`, data.quote.price);
-          } else {
-            console.log(`[WatchlistCard] ✓ ${item.symbol}: 정상 price=${data.quote.price}`);
-          }
-
           const newQuote = {
             price:         data.quote?.price         ?? 0,
             changePercent: data.quote?.changePercent ?? 0,
             change:        data.quote?.change        ?? 0,
             currency:      data.quote?.currency      ?? (item.market === "KR" ? "KRW" : "USD"),
           };
-          console.log(`[WatchlistCard] 4단계 - setQuote 호출 직전:`, newQuote);
-
-          // 0원이면 캐시 문제 경고
-          if (newQuote.price === 0 && !data.errors?.includes("실시간 시세 조회 실패")) {
-            console.warn(`[WatchlistCard] ⚠️ ${item.symbol}: 0원 표시! 브라우저 캐시 문제일 수 있습니다. Ctrl+Shift+R로 하드 리프레시를 권장합니다.`);
-          }
-
           setQuote(newQuote);
-        } else {
-          console.error(`[WatchlistCard] ${item.symbol} fetch FAILED:`, snapRes.status === "fulfilled" ? await snapRes.value.text() : snapRes.reason);
         }
 
         if (candleRes.status === "fulfilled" && candleRes.value.ok) {

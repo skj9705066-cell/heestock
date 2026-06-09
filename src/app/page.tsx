@@ -14,8 +14,9 @@ import {
 } from "@/lib/market-data";
 import { Clock, AlertCircle } from "lucide-react";
 
-// Revalidate every 60 s so Next.js doesn't cache stale data on the edge
-export const revalidate = 60;
+// Force dynamic rendering to always fetch fresh data
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function DashboardPage() {
   const now = new Date();
