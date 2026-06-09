@@ -42,52 +42,81 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
   const [loading,  setLoading]  = useState(true);
   const [expanded, setExpanded] = useState(false);
 
+  // 종목코드 정규화 + market 강제 재판별:
+  // localStorage의 market 값이 오염(KR 종목인데 "US")돼 있어도, 6자리 숫자 코드면
+  // 항상 KR로 조회한다. AI 종목 분석과 동일하게 올바른 시장으로 시세를 가져오기 위함.
+  const symbol = useMemo(
+    () => String(item.symbol).replace(/\.(KS|KQ)$/i, ""),
+    [item.symbol],
+  );
+  const market: "KR" | "US" = /^\d{6}$/.test(symbol) ? "KR" : item.market;
+
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
-      setLoading(true);
+    async function load(attempt: number) {
+      if (attempt === 0) setLoading(true);
       try {
         const ts = Date.now();
-        const url = `/api/stock-snapshot?symbol=${item.symbol}&market=${item.market}&v=2.0&_t=${ts}`;
+        const url = `/api/stock-snapshot?symbol=${symbol}&market=${market}&v=2.0&_t=${ts}`;
 
         const [snapRes, candleRes] = await Promise.allSettled([
           fetch(url, {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache" },
           }),
-          fetch(`/api/daily-candles?symbol=${item.symbol}&market=${item.market}&days=130&v=2.0&_t=${ts}`, {
+          fetch(`/api/daily-candles?symbol=${symbol}&market=${market}&days=130&v=2.0&_t=${ts}`, {
             cache: "no-store",
           }),
         ]);
 
         if (cancelled) return;
 
-        if (snapRes.status === "fulfilled" && snapRes.value.ok) {
-          const data = await snapRes.value.json();
-          const newQuote = {
-            price:         data.quote?.price         ?? 0,
-            changePercent: data.quote?.changePercent ?? 0,
-            change:        data.quote?.change        ?? 0,
-            currency:      data.quote?.currency      ?? (item.market === "KR" ? "KRW" : "USD"),
-          };
-          setQuote(newQuote);
-        }
-
         if (candleRes.status === "fulfilled" && candleRes.value.ok) {
           const data: OHLCVPoint[] = await candleRes.value.json();
           setCandles(Array.isArray(data) ? data : []);
         }
+
+        let priceOk = false;
+        if (snapRes.status === "fulfilled" && snapRes.value.ok) {
+          const data = await snapRes.value.json();
+          const price = data.quote?.price ?? 0;
+          if (price > 0) {
+            setQuote({
+              price,
+              changePercent: data.quote?.changePercent ?? 0,
+              change:        data.quote?.change        ?? 0,
+              currency:      data.quote?.currency      ?? (market === "KR" ? "KRW" : "USD"),
+            });
+            priceOk = true;
+          }
+        }
+
+        if (priceOk) { setLoading(false); return; }
+
+        // 빈 응답(장 마감 직후 등 일시적)일 수 있음 → 1회 자동 재시도
+        if (attempt < 1) {
+          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1500);
+          return;
+        }
+        // 재시도 후에도 실패 → 0원 대신 명확한 실패 표시
+        setQuote(null);
+        setLoading(false);
       } catch (e) {
+        if (cancelled) return;
         console.warn("[WatchlistStockCard] load failed:", e);
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (attempt < 1) {
+          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1500);
+          return;
+        }
+        setQuote(null);
+        setLoading(false);
       }
     }
 
-    load();
+    load(0);
     return () => { cancelled = true; };
-  }, [item.symbol, item.market]);
+  }, [symbol, market]);
 
   const currentPrice = quote?.price ?? 0;
 
@@ -141,7 +170,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
             ) : quote ? (
               <>
                 <span className="text-xl font-bold font-mono text-slate-900 dark:text-white">
-                  {fmt(currentPrice, item.market, quote.currency)}
+                  {fmt(currentPrice, market, quote.currency)}
                 </span>
                 <span className={cn("text-sm font-semibold font-mono", isUp ? "text-red-500" : "text-blue-500")}>
                   {isUp ? "▲" : "▼"} {formatPercent(Math.abs(quote.changePercent))}
@@ -151,7 +180,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
               <span className="text-sm text-slate-400">가격 불러오기 실패</span>
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-1 font-mono">{item.symbol} · {item.market}</p>
+          <p className="text-xs text-slate-400 mt-1 font-mono">{symbol} · {market}</p>
         </div>
 
         {/* Star button - top right */}
@@ -195,7 +224,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
           <div className="flex items-center gap-2.5">
             <span className="text-lg">{scoreEmoji(nearestSupport.score)}</span>
             <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-              {fmt(nearestSupport.price, item.market)}
+              {fmt(nearestSupport.price, market)}
             </span>
             <span className={cn("text-xs font-semibold", scoreColor(nearestSupport.score))}>
               강도 {nearestSupport.score}/4
@@ -233,7 +262,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
                   </h5>
                   <div className="space-y-2">
                     {supports.map((lvl, i) => (
-                      <LevelCard key={i} level={lvl} currentPrice={currentPrice} market={item.market} />
+                      <LevelCard key={i} level={lvl} currentPrice={currentPrice} market={market} />
                     ))}
                   </div>
                 </div>
@@ -247,7 +276,7 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
                   </h5>
                   <div className="space-y-2">
                     {resistances.map((lvl, i) => (
-                      <LevelCard key={i} level={lvl} currentPrice={currentPrice} market={item.market} />
+                      <LevelCard key={i} level={lvl} currentPrice={currentPrice} market={market} />
                     ))}
                   </div>
                 </div>

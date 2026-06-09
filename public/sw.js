@@ -1,9 +1,9 @@
 // 희스탁 HeeStock — Service Worker
 // IMPORTANT: bump these version suffixes whenever client-visible logic changes
 // so existing visitors invalidate their cached app shell + API responses.
-const CACHE_VER  = 'heestock-v2';
-const STATIC_CACHE = 'heestock-static-v2';
-const API_CACHE    = 'heestock-api-v2';
+const CACHE_VER  = 'heestock-v3';
+const STATIC_CACHE = 'heestock-static-v3';
+const API_CACHE    = 'heestock-api-v3';
 
 const PRECACHE_URLS = ['/', '/guide', '/ai-analysis', '/market-signals', '/rs-ranking', '/valuation', '/financials'];
 

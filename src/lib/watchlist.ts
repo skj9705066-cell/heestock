@@ -25,6 +25,16 @@ export function getWatchlist(): WatchlistItem[] {
         console.warn(`[watchlist] ${item.name}: symbol을 문자열로 변환 (${typeof item.symbol} → string)`);
       }
 
+      // 1.5 한국 종목 .KS/.KQ 접미사 제거 (앱은 6자리 코드만 사용)
+      if (typeof updated.symbol === "string") {
+        const stripped = updated.symbol.replace(/\.(KS|KQ)$/i, "");
+        if (stripped !== updated.symbol) {
+          console.warn(`[watchlist] ${item.name}: 접미사 제거 (${updated.symbol} → ${stripped})`);
+          updated.symbol = stripped;
+          needsUpdate = true;
+        }
+      }
+
       // 2. 한국 종목 symbol을 6자리로 패딩 (앞자리 0 복구)
       if (updated.symbol && /^\d+$/.test(updated.symbol)) {
         const padded = updated.symbol.padStart(6, "0");
@@ -35,11 +45,19 @@ export function getWatchlist(): WatchlistItem[] {
         }
       }
 
-      // 3. market 필드 없으면 자동 설정
-      if (!updated.market) {
-        const detectedMarket = /^\d{6}$/.test(updated.symbol) ? "KR" : "US";
-        console.warn(`[watchlist] ${updated.symbol} (${item.name}): market 필드 없음 → ${detectedMarket}로 자동 설정`);
-        updated.market = detectedMarket;
+      // 3. market 정규화/복구:
+      //    6자리 숫자 코드는 무조건 KR. 과거 버그로 KR 종목이 "US"로 오염 저장된
+      //    경우까지 강제로 바로잡는다 (값이 비었을 때만 채우던 기존 로직은 오염을 못 고침).
+      const isKrCode = /^\d{6}$/.test(updated.symbol);
+      if (isKrCode) {
+        if (updated.market !== "KR") {
+          console.warn(`[watchlist] ${updated.symbol} (${item.name}): market 오염/누락 복구 (${updated.market ?? "없음"} → KR)`);
+          updated.market = "KR";
+          needsUpdate = true;
+        }
+      } else if (!updated.market) {
+        console.warn(`[watchlist] ${updated.symbol} (${item.name}): market 필드 없음 → US로 자동 설정`);
+        updated.market = "US";
         needsUpdate = true;
       }
 
