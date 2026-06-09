@@ -1,45 +1,113 @@
-// 전역 클라이언트 요청 직렬화 큐.
+// 관심종목 시세용 클라이언트 요청 조절기.
 //
-// 문제: 관심종목 카드들이 동시에 mount하면서 각자 /api/stock-snapshot,
-// /api/daily-candles 를 한꺼번에 발사 → 서버가 KIS Open API를 짧은 시간에
-// 몰아 호출 → KIS 초당 호출제한에 걸려 일부 종목의 quote가 누락(200 + quote:null).
+// 문제: 홈 로드 시 WatchlistStockCard 여러 개 + BounceAlertsSection 이 같은 종목의
+// /api/stock-snapshot, /api/daily-candles 를 제각각 동시에(Promise.all) 발사 →
+// 서버가 KIS Open API를 짧은 시간에 몰아 호출 → 초당 제한에 걸려 일부 종목의
+// quote 가 누락(HTTP 200 + quote:null). 종목 4개면 한순간 ~16개 요청.
 //
-// 해결: 모든 카드의 fetch를 이 큐로 통과시켜 한 번에 하나씩, 최소 간격을 두고
-// 순차 실행한다. 화면 호출 경로는 그대로(같은 엔드포인트), 발사 타이밍만 분산.
+// 해결 2가지를 함께 적용:
+//   1) 동시성 제한(限): 한 번에 최대 MAX_CONCURRENT 개만 실제 호출.
+//   2) 중복 제거 + 단기 캐시: 같은 종목 요청은 진행 중이면 공유(in-flight),
+//      성공 결과는 TTL 동안 캐시 → 카드와 바운스알림이 한 번의 호출을 공유.
 
-type Task<T> = () => Promise<T>;
+const MAX_CONCURRENT = 3;   // 동시 실행 상한 (KIS 부하 ↓, 그래도 너무 느리지 않게)
+const CACHE_TTL_MS   = 60_000;
 
-// KIS 초당 제한 회피용 요청 시작 간 최소 간격(ms).
-const MIN_GAP_MS = 500;
-// 한 작업이 멈춰도 큐 전체가 영구히 막히지 않도록, 이 시간이 지나면 다음 작업을 진행.
-const MAX_TASK_MS = 20_000;
+// ── 동시성 세마포어 ───────────────────────────────────────────────────────────
+let active = 0;
+const waiters: Array<() => void> = [];
 
-let chain: Promise<unknown> = Promise.resolve();
-let lastStart = 0;
+function acquire(): Promise<void> {
+  if (active < MAX_CONCURRENT) {
+    active++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((res) => waiters.push(res));
+}
+
+function release(): void {
+  const next = waiters.shift();
+  if (next) next();      // 슬롯을 대기자에게 인계 (active 유지)
+  else active--;
+}
+
+async function run<T>(task: () => Promise<T>): Promise<T> {
+  await acquire();
+  try {
+    return await task();
+  } finally {
+    release();
+  }
+}
+
+// ── 중복 제거 + 캐시 ──────────────────────────────────────────────────────────
+type CacheEntry = { data: unknown; ts: number };
+const cache    = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<unknown>>();
 
 /**
- * task 를 전역 큐에 넣고, 직전 작업이 끝난 뒤(성공/실패 무관) MIN_GAP_MS 간격을
- * 보장한 다음 실행한다. task 자체의 결과(또는 예외)는 호출자에게 그대로 전달된다.
+ * key 단위로 중복 제거하며 JSON GET. 동일 key가 진행 중이면 그 promise를 공유하고,
+ * 유효한(=isValid) 결과는 TTL 동안 캐시한다. 실패/무효 결과는 캐시하지 않아 재시도 가능.
+ * 반환: 파싱된 JSON, 또는 응답 실패 시 null.
  */
-export function enqueue<T>(task: Task<T>): Promise<T> {
-  const run = async (): Promise<T> => {
-    const gap = MIN_GAP_MS - (Date.now() - lastStart);
-    if (gap > 0) await new Promise((r) => setTimeout(r, gap));
-    lastStart = Date.now();
-    return task();
-  };
+function dedupedFetch<T>(
+  key: string,
+  url: string,
+  init: RequestInit,
+  isValid: (data: T) => boolean,
+): Promise<T | null> {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
+    return Promise.resolve(hit.data as T);
+  }
+  const existing = inflight.get(key) as Promise<T | null> | undefined;
+  if (existing) return existing;
 
-  // 이전 작업의 성공/실패와 무관하게 다음 작업을 이어서 실행.
-  const result = chain.then(run, run);
-  // 체인이 거부로 끊기지 않도록 결과를 삼키고, 작업이 멈춰도 MAX_TASK_MS 후
-  // 다음 작업이 진행되도록 타임아웃과 경합시킨 꼬리를 다음 체인으로 사용.
-  const settled = result.then(
-    () => undefined,
-    () => undefined,
+  const p = run(async () => {
+    const res = await fetch(url, init);
+    const data = res.ok ? ((await res.json()) as T) : null;
+    if (data != null && isValid(data)) {
+      cache.set(key, { data, ts: Date.now() });
+    }
+    return data;
+  }).finally(() => inflight.delete(key));
+
+  inflight.set(key, p as Promise<unknown>);
+  return p;
+}
+
+// ── 공개 헬퍼 ─────────────────────────────────────────────────────────────────
+
+export interface SnapshotQuoteLite {
+  quote?: { price?: number; change?: number; changePercent?: number; currency?: string } | null;
+  [k: string]: unknown;
+}
+
+/** 종목 스냅샷(시세 포함). quote.price>0 일 때만 캐시. 실패 시 null. */
+export function fetchSnapshot(
+  symbol: string,
+  market: "KR" | "US",
+): Promise<SnapshotQuoteLite | null> {
+  const url = `/api/stock-snapshot?symbol=${symbol}&market=${market}&_t=${Date.now()}`;
+  return dedupedFetch<SnapshotQuoteLite>(
+    `snap:${market}:${symbol}`,
+    url,
+    { cache: "no-store", headers: { "Cache-Control": "no-cache" } },
+    (d) => (d?.quote?.price ?? 0) > 0,
   );
-  chain = Promise.race([
-    settled,
-    new Promise<void>((r) => setTimeout(r, MAX_TASK_MS)),
-  ]);
-  return result;
+}
+
+/** 일봉 캔들. 20개 이상일 때만 캐시. 실패 시 null. */
+export function fetchCandles(
+  symbol: string,
+  market: "KR" | "US",
+  days = 130,
+): Promise<unknown[] | null> {
+  const url = `/api/daily-candles?symbol=${symbol}&market=${market}&days=${days}&_t=${Date.now()}`;
+  return dedupedFetch<unknown[]>(
+    `cand:${market}:${symbol}`,
+    url,
+    { cache: "no-store" },
+    (d) => Array.isArray(d) && d.length >= 20,
+  );
 }

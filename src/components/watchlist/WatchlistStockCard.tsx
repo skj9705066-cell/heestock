@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import { cn, formatPercent } from "@/lib/utils";
 import { WatchlistItem } from "@/lib/watchlist";
 import { calcSupportLevels, detectBounce, type OHLCVPoint, type SupportLevel } from "@/lib/support-levels";
-import { enqueue } from "@/lib/request-queue";
+import { fetchSnapshot, fetchCandles } from "@/lib/request-queue";
 
 interface QuoteData {
   price:         number;
@@ -59,46 +59,36 @@ export function WatchlistStockCard({ item, onRemove }: Props) {
     async function load(attempt: number) {
       if (attempt === 0) setLoading(true);
       try {
-        const ts = Date.now();
-        const snapUrl = `/api/stock-snapshot?symbol=${symbol}&market=${market}&v=2.0&_t=${ts}`;
-        const candUrl = `/api/daily-candles?symbol=${symbol}&market=${market}&days=130&v=2.0&_t=${ts}`;
-
-        // 전역 큐로 통과 → 모든 카드 합쳐 한 번에 하나씩, 간격을 두고 호출.
-        // 동시 발사로 KIS 초당 제한에 걸리던 문제를 제거한다. 시세를 먼저 큐에 넣어 우선 처리.
-        const snapPromise = enqueue(() =>
-          fetch(snapUrl, { cache: "no-store", headers: { "Cache-Control": "no-cache" } }),
-        );
-        const candPromise = enqueue(() => fetch(candUrl, { cache: "no-store" }));
-        const [snapRes, candleRes] = await Promise.allSettled([snapPromise, candPromise]);
+        // 동시성 제한 + 중복제거 큐 경유. 같은 종목은 바운스알림/다른 카드와 호출을 공유.
+        const [snap, candleData] = await Promise.all([
+          fetchSnapshot(symbol, market),
+          fetchCandles(symbol, market, 130),
+        ]);
 
         if (cancelled) return;
 
-        if (candleRes.status === "fulfilled" && candleRes.value.ok) {
-          const data: OHLCVPoint[] = await candleRes.value.json();
-          setCandles(Array.isArray(data) ? data : []);
+        if (Array.isArray(candleData)) {
+          setCandles(candleData as OHLCVPoint[]);
         }
 
         let priceOk = false;
-        if (snapRes.status === "fulfilled" && snapRes.value.ok) {
-          const data = await snapRes.value.json();
-          const price = data.quote?.price ?? 0;
-          if (price > 0) {
-            setQuote({
-              price,
-              changePercent: data.quote?.changePercent ?? 0,
-              change:        data.quote?.change        ?? 0,
-              currency:      data.quote?.currency      ?? (market === "KR" ? "KRW" : "USD"),
-            });
-            priceOk = true;
-          }
+        const price = snap?.quote?.price ?? 0;
+        if (price > 0) {
+          setQuote({
+            price,
+            changePercent: snap!.quote!.changePercent ?? 0,
+            change:        snap!.quote!.change        ?? 0,
+            currency:      snap!.quote!.currency       ?? (market === "KR" ? "KRW" : "USD"),
+          });
+          priceOk = true;
         }
 
         if (priceOk) { setLoading(false); return; }
 
-        // 200이지만 quote 누락(=KIS 일시 제한/빈 응답) → 큐를 통해 재시도(최대 2회).
-        // 재시도도 큐로 직렬화되므로 첫 폭주가 가신 뒤 호출돼 대부분 성공한다.
+        // quote 누락(=KIS 일시 제한/빈 응답) → 간격을 두고 재시도(최대 2회).
+        // 재시도는 큐(동시성 3)를 통해 나가므로 첫 폭주가 가신 뒤 호출돼 대부분 성공한다.
         if (attempt < 2) {
-          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1200);
+          setTimeout(() => { if (!cancelled) load(attempt + 1); }, 1500);
           return;
         }
         // 재시도 후에도 실패 → 0원 대신 명확한 실패 표시

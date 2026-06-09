@@ -5,7 +5,7 @@ import { Bell, TrendingUp, X, ChevronDown, ChevronUp } from "lucide-react";
 import { cn, formatPercent } from "@/lib/utils";
 import { WatchlistItem } from "@/lib/watchlist";
 import { calcSupportLevels, detectBounce, type OHLCVPoint, type BounceSignal } from "@/lib/support-levels";
-import { enqueue } from "@/lib/request-queue";
+import { fetchSnapshot, fetchCandles } from "@/lib/request-queue";
 import toast from "react-hot-toast";
 
 interface BounceAlert {
@@ -65,44 +65,24 @@ export function BounceAlertsSection({ watchlist }: Props) {
             const sym = String(item.symbol).replace(/\.(KS|KQ)$/i, "");
             const mkt: "KR" | "US" = /^\d{6}$/.test(sym) ? "KR" : item.market;
 
-            // 브라우저 캐시 완전 무효화: 버전(v=2.1) + timestamp
-            const ts = Date.now();
-            // 전역 큐로 직렬화 → 관심종목 카드와 합쳐 KIS 동시 호출 폭주를 막는다.
-            const [snapRes, candleRes] = await Promise.allSettled([
-              enqueue(() =>
-                fetch(`/api/stock-snapshot?symbol=${sym}&market=${mkt}&v=2.1&_t=${ts}`, {
-                  cache: "no-store",
-                  headers: { "Cache-Control": "no-cache" },
-                }),
-              ),
-              enqueue(() =>
-                fetch(`/api/daily-candles?symbol=${sym}&market=${mkt}&days=130&v=2.1&_t=${ts}`, {
-                  cache: "no-store",
-                }),
-              ),
+            // 동시성 제한 + 중복제거 큐 경유. 같은 종목은 관심종목 카드와 호출을 공유.
+            const [snap, candles] = await Promise.all([
+              fetchSnapshot(sym, mkt),
+              fetchCandles(sym, mkt, 130),
             ]);
 
             if (cancelled) return;
 
-            let price = 0;
-            let changePercent = 0;
+            const price = snap?.quote?.price ?? 0;
+            const changePercent = snap?.quote?.changePercent ?? 0;
 
-            if (snapRes.status === "fulfilled" && snapRes.value.ok) {
-              const data = await snapRes.value.json();
-              price = data.quote?.price ?? 0;
-              changePercent = data.quote?.changePercent ?? 0;
-            }
+            if (!Array.isArray(candles) || candles.length < 20 || !price) return;
 
-            if (candleRes.status === "fulfilled" && candleRes.value.ok) {
-              const candles: OHLCVPoint[] = await candleRes.value.json();
-              if (!Array.isArray(candles) || candles.length < 20 || !price) return;
+            const supportLevels = calcSupportLevels(candles as OHLCVPoint[], price);
+            const bounce = detectBounce(candles as OHLCVPoint[], price, supportLevels);
 
-              const supportLevels = calcSupportLevels(candles, price);
-              const bounce = detectBounce(candles, price, supportLevels);
-
-              if (bounce.detected) {
-                results.push({ item, bounce, price, changePercent });
-              }
+            if (bounce.detected) {
+              results.push({ item, bounce, price, changePercent });
             }
           } catch (e) {
             console.warn("[BounceAlertsSection] scan failed for", item.symbol, e);
