@@ -1,0 +1,67 @@
+name: KIS token refresh
+
+# KIS 접근토큰은 24h 유효하지만 발급은 "1분당 1회"(EGW00133)라 서버리스 인스턴스마다
+# 각자 발급하면 콜드스타트가 몰릴 때 실패한다. 그래서 여기서 토큰을 1회 발급해
+# Vercel 환경변수(KIS_ACCESS_TOKEN/_EXP)에 주입하고 재배포 → 모든 인스턴스가 공유.
+# 12시간마다 갱신(24h 만료 전 충분한 여유).
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: kis-token-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Issue KIS access token
+        id: tok
+        run: |
+          resp=$(curl -s --max-time 20 -X POST "https://openapi.koreainvestment.com:9443/oauth2/tokenP" \
+            -H "content-type: application/json" \
+            -d "{\"grant_type\":\"client_credentials\",\"appkey\":\"${{ secrets.KIS_APP_KEY }}\",\"appsecret\":\"${{ secrets.KIS_APP_SECRET }}\"}")
+          tok=$(echo "$resp" | jq -r '.access_token // empty')
+          expin=$(echo "$resp" | jq -r '.expires_in // 86400')
+          if [ -z "$tok" ]; then echo "토큰 발급 실패: $(echo "$resp" | jq -r '.error_description // .msg1 // .')"; exit 1; fi
+          echo "::add-mask::$tok"
+          expms=$(( ( $(date +%s) + expin ) * 1000 ))
+          echo "token=$tok"   >> "$GITHUB_OUTPUT"
+          echo "expms=$expms" >> "$GITHUB_OUTPUT"
+          echo "토큰 발급 성공 (expires_in=${expin}s)"
+
+      - name: Update Vercel production env
+        env:
+          VT:   ${{ secrets.VERCEL_TOKEN }}
+          TEAM: ${{ secrets.VERCEL_ORG_ID }}
+          PROJ: ${{ secrets.VERCEL_PROJECT_ID }}
+          TOKEN: ${{ steps.tok.outputs.token }}
+          EXPMS: ${{ steps.tok.outputs.expms }}
+        run: |
+          set_env() {
+            key="$1"; val="$2"
+            id=$(curl -s "https://api.vercel.com/v9/projects/$PROJ/env?teamId=$TEAM" -H "Authorization: Bearer $VT" \
+                 | jq -r ".envs[] | select(.key==\"$key\") | .id" | head -1)
+            if [ -n "$id" ] && [ "$id" != "null" ]; then
+              curl -s -X DELETE "https://api.vercel.com/v9/projects/$PROJ/env/$id?teamId=$TEAM" -H "Authorization: Bearer $VT" >/dev/null
+            fi
+            curl -s -X POST "https://api.vercel.com/v10/projects/$PROJ/env?teamId=$TEAM" \
+              -H "Authorization: Bearer $VT" -H "Content-Type: application/json" \
+              -d "{\"key\":\"$key\",\"value\":\"$val\",\"type\":\"encrypted\",\"target\":[\"production\"]}" \
+              | jq -r 'if .error then "  ERROR " + .error.message else "  ok " + .key end'
+          }
+          set_env KIS_ACCESS_TOKEN     "$TOKEN"
+          set_env KIS_ACCESS_TOKEN_EXP "$EXPMS"
+
+      - name: Redeploy production (apply new env)
+        env:
+          VERCEL_ORG_ID:     ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npx --yes vercel@latest deploy --prod --yes --token="${{ secrets.VERCEL_TOKEN }}"
