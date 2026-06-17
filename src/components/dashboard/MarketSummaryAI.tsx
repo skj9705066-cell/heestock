@@ -13,6 +13,7 @@ interface BriefingResult {
   summary:    string;
   sentiment:  "bullish" | "bearish" | "neutral";
   keyPoints:  string[];
+  source?:    "ai" | "auto";
 }
 
 export function MarketSummaryAI({ indices = [] }: Props) {
@@ -91,7 +92,9 @@ export function MarketSummaryAI({ indices = [] }: Props) {
           </div>
           <div>
             <h3 className="section-title text-base">AI 시장 브리핑</h3>
-            <p className="text-xs text-slate-400">실시간 지수 기반 · Claude AI</p>
+            <p className="text-xs text-slate-400">
+              실시간 지수 기반 · {result?.source === "auto" ? "자동 요약" : "Claude AI"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -156,7 +159,9 @@ export function MarketSummaryAI({ indices = [] }: Props) {
             timeZone: "Asia/Seoul",
           })} 기준
         </span>
-        <span className="text-xs text-slate-300 dark:text-slate-600">claude-sonnet-4-6</span>
+        <span className="text-xs text-slate-300 dark:text-slate-600">
+          {result?.source === "auto" ? "데이터 기반 자동 요약" : "claude-sonnet-4-6"}
+        </span>
       </div>
     </div>
   );
